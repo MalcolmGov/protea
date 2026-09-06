@@ -218,10 +218,13 @@ def _binding_checks(e: Expect, obj: Any) -> list[Check]:
     for b in (obj.get("bindings") if isinstance(obj, dict) else None) or []:
         if isinstance(b, dict) and "tool" in b:
             actual[str(b["tool"])] = str(b.get("connector", ""))
-    return [
-        Check(name=f"binding:{tool}", ok=actual.get(tool) == conn, detail=f"expected {conn}, got {actual.get(tool)!r}")
-        for tool, conn in e.bindings.items()
-    ]
+    checks = []
+    for tool, conn in e.bindings.items():
+        accepted = [conn] if isinstance(conn, str) else list(conn)
+        got = actual.get(tool)
+        want = accepted[0] if len(accepted) == 1 else f"one of {accepted}"
+        checks.append(Check(name=f"binding:{tool}", ok=got in accepted, detail=f"expected {want}, got {got!r}"))
+    return checks
 
 
 def _dag_ok(nodes: dict[str, str], edges: list[tuple[str, str]]) -> bool:

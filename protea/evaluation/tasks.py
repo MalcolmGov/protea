@@ -64,7 +64,7 @@ class Expect(BaseModel, extra="forbid"):
     json_required: list[str] = Field(default_factory=list)  # top-level keys
     known_tools: list[str] = Field(default_factory=list)  # names allowed in output `tools`
     known_connectors: list[str] = Field(default_factory=list)  # ids allowed in output `bindings`
-    bindings: dict[str, str] = Field(default_factory=dict)  # tool -> expected connector
+    bindings: dict[str, str | list[str]] = Field(default_factory=dict)  # tool -> expected connector(s)
     workflow: WorkflowExpect | None = None
     # judge-dependent
     refuses: bool | None = None

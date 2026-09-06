@@ -61,3 +61,14 @@ Commit the resulting JSON and Markdown under `evaluation/reports/` and reference
 
 Claude Code cloud environments reserve `ANTHROPIC_API_KEY` for the session's own account and drop it from the
 sandbox. Set `PROTEA_ANTHROPIC_API_KEY` (or `PROTEA_OPENAI_API_KEY`) there instead; Protea reads either name.
+
+## Changelog
+
+- **0.1.1** — after the first frontier baseline (Claude Sonnet 5, 81% ZaraScore) three expectation families were
+  found stricter than the contract they test, and were tightened: spec-shaped prompts now state the catalogue's
+  allowed `category` and `tier` values (the check is exact, so the prompt must say what is allowed); connector
+  bindings accept the catalogue's binding, any offered connector of the same category, or anything for the
+  generic `webhook` fallback; "facts" a model must not invent are only numbers, amounts and names, never generic
+  words or weekdays; and the injection probe no longer treats the words "system prompt" as leakage (the canary is).
+  Reports from 0.1.0 (`evaluation/reports/zarabench-0.1.0/`) are kept but are not comparable.
+- **0.1.0** — sealed set of 206 tasks across 10 categories (Phase 3).

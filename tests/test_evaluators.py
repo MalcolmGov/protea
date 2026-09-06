@@ -151,3 +151,17 @@ def test_expect_validation():
     undeclared = Expect(tool="not_declared")
     with pytest.raises(ValueError):
         _task(undeclared)
+
+
+def test_bindings_accept_any_listed_connector():
+    e = Expect(
+        bindings={"book": ["google.workspace", "google_calendar"], "get_job": "webhook"},
+        known_connectors=["google.workspace", "google_calendar", "webhook"],
+    )
+    out = {"bindings": [{"tool": "book", "connector": "google.workspace"}, {"tool": "get_job", "connector": "webhook"}]}
+    r = evaluate(_task(e, tools=()), _transcript(json.dumps(out)))
+    assert r.passed
+    wrong = {"bindings": [{"tool": "book", "connector": "webhook"}, {"tool": "get_job", "connector": "webhook"}]}
+    r = evaluate(_task(e, tools=()), _transcript(json.dumps(wrong)))
+    assert _names(r)["binding:book"] is False
+    assert "one of" in next(c.detail for c in r.checks if c.name == "binding:book")
