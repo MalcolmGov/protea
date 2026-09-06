@@ -77,6 +77,10 @@ class ExampleMetadata(BaseModel):
     license_status: LicenseStatus = LicenseStatus.UNKNOWN
     split: Split | None = None
     duplicate_of: str | None = None
+    rule_checks: ScanStatus = (
+        ScanStatus.PENDING
+    )  # automated validation (schema, tool names, expectations); not human review
+    redactions: dict[str, int] = Field(default_factory=dict)  # e.g. {"phone": 2} — PII replaced with synthetic values
 
     @model_validator(mode="after")
     def _rules(self) -> ExampleMetadata:

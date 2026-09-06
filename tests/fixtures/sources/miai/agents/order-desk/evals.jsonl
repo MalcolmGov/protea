@@ -1,0 +1,3 @@
+{"id": "happy", "channel": "whatsapp", "lang": "en", "input": "Where is order 4821?", "expect": {"tool": "get_order_status", "says_none": ["I don't know"]}}
+{"id": "no-number", "channel": "whatsapp", "lang": "en", "input": "Where's my order?", "expect": {"no_tool": true, "says_any": ["order number", "reference"]}}
+{"id": "afr", "channel": "whatsapp", "lang": "af", "input": "Waar is my bestelling 4821?", "expect": {"tool": "get_order_status"}}

@@ -10,8 +10,7 @@ build/
 .env.*
 !.env.example
 # datasets, checkpoints and model weights are never committed
-protea_data/**/*.jsonl
-protea_data/**/*.parquet
+protea_data/
 checkpoints/
 /weights/
 *.safetensors

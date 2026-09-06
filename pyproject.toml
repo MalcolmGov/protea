@@ -39,7 +39,11 @@ asyncio_mode = "auto"
 [tool.ruff]
 line-length = 120
 target-version = "py311"
+extend-exclude = ["tests/fixtures"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
 ignore = ["B008"]  # typer.Argument/Option in defaults is the framework idiom
+
+[tool.ruff.lint.pycodestyle]
+max-line-length = 150  # long string literals; the formatter still wraps code at 120

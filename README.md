@@ -15,7 +15,8 @@ The programme was specified under the working name "ZaraLM". Phase 0 discovery i
 | Dataset and model registries with release lifecycle | implemented — Phase 1 (ADR-004) |
 | YAML config schemas for models, training, inference, evaluation + content hashes | implemented — Phase 1 (ADR-005) |
 | Model selection (desk assessment) | implemented — `docs/model-selection.md`; measured in Phase 3 |
-| Data pipeline (`dataset build`) | planned — Phase 2 |
+| Data pipeline: allowlist discovery, classification, secret/PII/brand/contamination scanners, extractors, normalisers, family splits, golden guard, manifests and cards (`dataset build|golden-check`) | implemented — Phase 2 (ADR-006) |
+| Eval-seeded synthetic tool-calling (`dataset synthesize`, gated) | implemented — Phase 2; teacher policy pending |
 | Evaluation framework + ZaraBench suite | planned — Phase 3 |
 | Training (SFT / LoRA / QLoRA, remote GPU) | planned — Phase 4 |
 | Inference (vLLM, OpenAI-compatible) | planned — Phase 5 |
@@ -32,7 +33,8 @@ protea/
   providers/             ModelProvider + adapters (anthropic, openai_compatible, google, mock) and build_provider()
   config/                environment settings, YAML schemas, loader + content hash
   registry/              file-backed dataset and model registries
-configs/                 models/, training/, inference/, evaluation/ (validated in CI)
+  data_pipeline/         sources, discovery, classify, scanners/, extractors/, normalize/, dedup, splits, build, synthetic
+configs/                 models/, training/, inference/, evaluation/, datasets/ (validated in CI)
 registry/                datasets.json, models.json (source of truth for releases)
 docs/                    Phase 0 documents, ADRs, model selection
 tests/                   pytest; everything here runs without a GPU

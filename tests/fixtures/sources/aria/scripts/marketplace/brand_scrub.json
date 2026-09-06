@@ -1,0 +1,12 @@
+{
+ "version": 1,
+ "forbidden_patterns": [
+  {
+   "pattern": "(?i)my\\s*instant\\s*ai",
+   "replace": "Zara",
+   "scope": [
+    "system_prompt"
+   ]
+  }
+ ]
+}

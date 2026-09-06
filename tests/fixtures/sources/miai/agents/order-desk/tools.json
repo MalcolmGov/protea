@@ -1,0 +1,1 @@
+[{"name": "get_order_status", "description": "Look up an order.", "parameters": {"type": "object", "properties": {"order_id": {"type": "string"}}, "required": ["order_id"]}, "side_effects": "read-only"}]

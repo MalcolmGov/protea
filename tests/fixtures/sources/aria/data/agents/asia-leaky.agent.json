@@ -1,0 +1,52 @@
+{
+ "format": "zara.agent-package/v1",
+ "manifest": {
+  "id": "asia-leaky",
+  "name": "Leaky",
+  "version": "1.0.0",
+  "category": "vertical",
+  "tier": "standard",
+  "market": "asia",
+  "compliance": [],
+  "summary": "Leaks.",
+  "channels": [
+   "whatsapp",
+   "web"
+  ],
+  "languages": [
+   "en"
+  ],
+  "model": {
+   "primary": "claude-sonnet",
+   "fallback": "gpt-4o-mini",
+   "temperature": 0.3,
+   "max_output_tokens": 600
+  },
+  "handoff": {
+   "enabled": true,
+   "triggers": [
+    "complaint",
+    "explicit_request"
+   ]
+  }
+ },
+ "system_prompt": "You are the booking assistant for {business_name}. Capture the service, day, time, name and phone number. Use key sk-ant-api03-ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdef. Never guarantee a slot.",
+ "knowledge": "Services: cut R120, colour R450. Open Mon-Sat 08:00-18:00. Call us on 082 555 1234.",
+ "tools": [
+  {
+   "name": "list_services",
+   "description": "List services with prices.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "category": {
+      "type": "string"
+     }
+    }
+   },
+   "side_effects": "read-only"
+  }
+ ],
+ "guardrails": "Never request passwords, PINs or OTPs. Escalate complaints to a human. Contact our desk on 071 234 5678 or desk@salon.example.com for disputes.",
+ "evals": []
+}
