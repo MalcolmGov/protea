@@ -1,0 +1,17 @@
+id: qwen3-8b
+hf_repo: Qwen/Qwen3-8B
+family: qwen3
+license: apache-2.0
+params_b: 8.2
+context_length: 32768
+gated: false
+languages: [en, af, zu, sw, fr, pt, es, de, it, hi, zh]
+supports_tools: true
+chat_template: native
+serving:
+  dtype: bfloat16
+  quantization: none
+  max_model_len: 8192
+  tool_call_parser: hermes
+  min_vram_gb: 20
+notes: Primary v0 candidate. Base checkpoint Qwen/Qwen3-8B-Base available for continued pretraining. Language list is the *claimed* coverage; measure each with ZaraBench slices.

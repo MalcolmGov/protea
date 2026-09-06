@@ -1,0 +1,16 @@
+id: gpt-oss-20b
+hf_repo: openai/gpt-oss-20b
+family: gpt_oss
+license: apache-2.0
+params_b: 20.9
+context_length: 131072
+gated: false
+languages: [en]
+supports_tools: true
+serving:
+  dtype: bfloat16
+  quantization: none
+  max_model_len: 8192
+  tool_call_parser: openai
+  min_vram_gb: 16
+notes: MoE with ~3.6B active parameters; strong tool use; MXFP4 weights. QLoRA tooling less mature than dense Qwen3 — benchmark before committing.

@@ -100,13 +100,18 @@ flowchart TD
 
 ```python
 class GenerationRequest(BaseModel):
-    messages: list[Message]; tools: list[ToolSchema] | None = None
-    response_schema: dict | None = None      # JSON Schema for constrained decoding
-    max_tokens: int = 1024; temperature: float = 0.2
-    metadata: RequestMeta                     # request_id, tenant_ref (hashed), agent_id, task_type
+    messages: list[Message]
+    tools: list[ToolSchema] | None = None
+    response_schema: dict | None = None  # JSON Schema for constrained decoding
+    max_tokens: int = 1024
+    temperature: float = 0.2
+    metadata: RequestMeta  # request_id, tenant_ref (hashed), agent_id, task_type
+
 
 class ModelProvider(Protocol):
-    name: str; model_id: str
+    name: str
+    model_id: str
+
     async def generate(self, req: GenerationRequest) -> GenerationResponse: ...
     async def stream(self, req: GenerationRequest) -> AsyncIterator[ModelChunk]: ...
     async def generate_structured(self, req: GenerationRequest, schema: type[T]) -> T: ...

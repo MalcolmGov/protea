@@ -1,0 +1,37 @@
+# First real experiment (spec §64–§65, roadmap §4). Runs only on a rented GPU after an explicit --dry-run review.
+model:
+  base_model: Qwen/Qwen3-8B
+  trust_remote_code: false
+  load_in_4bit: true
+training:
+  method: qlora
+  epochs: 3
+  learning_rate: 1.0e-4
+  max_sequence_length: 6144
+  per_device_batch_size: 2
+  gradient_accumulation_steps: 8
+  gradient_checkpointing: true
+  warmup_ratio: 0.03
+  lr_scheduler: cosine
+  seed: 42
+  bf16: true
+  save_steps: 100
+  eval_steps: 100
+lora:
+  rank: 32
+  alpha: 64
+  dropout: 0.05
+dataset:
+  train: protea_data/agent-training/0.1.0/train.jsonl
+  validation: protea_data/agent-training/0.1.0/validation.jsonl
+  dataset_key: agent-training-0.1.0
+output:
+  dir: checkpoints/protea-agent-0.1
+  experiment_name: protea-agent-0.1-qwen3-8b-qlora
+  model_family: protea-agent
+  tags: {base: qwen3-8b, method: qlora}
+budget:
+  max_runtime_minutes: 300
+  max_cost_usd: 40
+  idle_shutdown_minutes: 15
+  checkpoint_before_shutdown: true

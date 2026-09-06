@@ -1,0 +1,12 @@
+engine: vllm
+model: Qwen/Qwen3-8B
+adapter: null            # path or registry key of a Protea LoRA adapter once one exists
+served_model_name: protea-agent
+quantization: none
+dtype: bfloat16
+max_model_len: 8192
+gpu_memory_utilization: 0.9
+tool_call_parser: hermes
+guided_decoding_backend: xgrammar
+port: 8000
+require_token: true
