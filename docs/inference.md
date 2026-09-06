@@ -45,7 +45,7 @@ Use the facade's `aliases` list to accept the model names aria already sends (fo
 ```bash
 export PROTEA_FACADE_TOKEN=dev-token
 protea serve facade --backend mock --check          # builds the app, probes the backend, prints readiness
-protea serve facade --backend mock --port 8080      # serves; try: curl -H "Authorization: Bearer dev-token" localhost:8080/v1/models
+protea serve facade --backend mock --port 8080      # serves; try: curl -H "Authorization: Bearer $PROTEA_FACADE_TOKEN" localhost:8080/v1/models
 protea serve vllm                                    # prints the engine command for configs/inference/vllm-qwen3-8b.yaml
 ```
 

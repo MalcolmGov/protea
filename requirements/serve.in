@@ -1,0 +1,4 @@
+# Facade image: base runtime + FastAPI/uvicorn.
+-r base.in
+fastapi==0.141.1
+uvicorn==0.52.4

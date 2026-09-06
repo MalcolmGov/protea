@@ -28,7 +28,7 @@ def vllm_args(
         "--port",
         str(cfg.port),
         "--host",
-        "0.0.0.0",  # noqa: S104 — container bind; the facade or an ingress fronts it
+        "0.0.0.0",  # container bind; the facade or an ingress fronts it
     ]
     if cfg.quantization and cfg.quantization != "none":
         args += ["--quantization", cfg.quantization]

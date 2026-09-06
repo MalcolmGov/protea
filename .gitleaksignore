@@ -1,0 +1,2 @@
+# Placeholder bearer token in a documentation curl example (rewritten to use the env var in the next commit).
+9fa8eca0b4e3265e90275d2fc429a304326abe3b:docs/inference.md:curl-auth-header:48

@@ -1,23 +1,31 @@
 # Protea inference engine: vLLM OpenAI-compatible server with an optional LoRA adapter mount.
 # Build:  docker build -f deployment/protea/Dockerfile.infer -t ghcr.io/malcolmgov/protea-infer:latest .
 # Run:    docker run --gpus all -p 8000:8000 -e PROTEA_INFERENCE_TOKEN=... -e HF_TOKEN=... \
-#           -v /srv/adapters:/adapters:ro -v /srv/hf-cache:/root/.cache/huggingface \
+#           -v /srv/adapters:/adapters:ro -v /srv/hf-cache:/data/hf \
 #           ghcr.io/malcolmgov/protea-infer:latest
 FROM vllm/vllm-openai:v0.11.0
 
 ENV PYTHONUNBUFFERED=1 \
     HF_HUB_ENABLE_HF_TRANSFER=1 \
+    HF_HOME=/data/hf \
+    PYTHONPATH=/app \
     PROTEA_INFERENCE_CONFIG=/app/configs/inference/vllm-qwen3-8b.yaml
 
 WORKDIR /app
-COPY pyproject.toml README.md LICENSE ./
-COPY protea ./protea
-COPY configs ./configs
-COPY deployment/protea/entrypoint-infer.sh /usr/local/bin/entrypoint-infer.sh
-RUN pip install --no-cache-dir --no-deps . && chmod +x /usr/local/bin/entrypoint-infer.sh
+# Only the hash-pinned base runtime (pydantic, yaml, typer) so `protea serve vllm` can render the engine command;
+# the package is used from source via PYTHONPATH and nothing else is layered onto the vLLM image.
+COPY requirements/base.txt ./requirements/base.txt
+RUN pip install --only-binary :all: --require-hashes -r requirements/base.txt \
+ && useradd --create-home --uid 10001 protea \
+ && mkdir -p /adapters /data/hf && chown -R protea:protea /data /app
+COPY --chown=protea:protea protea ./protea
+COPY --chown=protea:protea configs ./configs
+COPY --chown=protea:protea deployment/protea/entrypoint-infer.sh /usr/local/bin/entrypoint-infer.sh
+RUN chmod +x /usr/local/bin/entrypoint-infer.sh
+USER protea
 
-# Adapters are mounted, never baked in; weights come from the HF cache volume.
-VOLUME ["/adapters", "/root/.cache/huggingface"]
+# Adapters are mounted, never baked in; weights land in the HF cache volume.
+VOLUME ["/adapters", "/data/hf"]
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=600s --retries=5 \
   CMD curl -fsS http://localhost:8000/health || exit 1

@@ -4,7 +4,7 @@
 set -euo pipefail
 CONFIG="${PROTEA_INFERENCE_CONFIG:-/app/configs/inference/vllm-qwen3-8b.yaml}"
 ADAPTER_ARG=()
-if [ -n "${PROTEA_ADAPTER_PATH:-}" ]; then ADAPTER_ARG=(--adapter "$PROTEA_ADAPTER_PATH"); fi
+if [[ -n "${PROTEA_ADAPTER_PATH:-}" ]]; then ADAPTER_ARG=(--adapter "$PROTEA_ADAPTER_PATH"); fi
 
 CMD="$(python -m protea.cli serve vllm --config "$CONFIG" "${ADAPTER_ARG[@]}")"
 echo "protea-infer: $CMD"

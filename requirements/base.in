@@ -1,0 +1,8 @@
+# Runtime pins shared by every Protea image (regenerate the hashed lock with the command in train-cpu.in).
+pydantic==2.13.5
+pydantic-settings==2.15.0
+pyyaml==6.0.3
+typer==0.27.2
+httpx==0.28.1
+anthropic==1.4.0
+jsonschema==4.26.0

@@ -33,8 +33,9 @@ def test_token_required_and_ops_endpoints():
         text = client.get("/metrics").text
         assert "protea_requests_total" in text
         assert "protea_backend_ready 1" in text
+    cfg, backend = ServeConfig(), MockProvider()
     with pytest.raises(ValueError, match="PROTEA_FACADE_TOKEN"):
-        create_app(ServeConfig(), MockProvider(), token=None)
+        create_app(cfg, backend, token=None)
 
 
 def test_chat_completions_text_tools_and_schema_passthrough():
@@ -64,7 +65,9 @@ def test_chat_completions_text_tools_and_schema_passthrough():
         assert json.loads(call["function"]["arguments"]) == {"order_id": "7"}
         assert r.json()["choices"][0]["finish_reason"] == "tool_calls"
         assert mock.requests[-1].tools[0].name == "get_order"
-        assert mock.requests[-1].metadata.tenant_ref and mock.requests[-1].metadata.tenant_ref != "acme"
+        tenant = mock.requests[-1].metadata.tenant_ref
+        assert tenant
+        assert tenant != "acme"
 
         fmt = {"type": "json_schema", "json_schema": {"name": "Lane", "schema": SCHEMA}}
         r = client.post("/v1/chat/completions", json={**body, "response_format": fmt}, headers=AUTH)

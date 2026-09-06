@@ -9,7 +9,7 @@ services:
       PROTEA_ADAPTER_PATH: ${PROTEA_ADAPTER_PATH:-}
       HF_TOKEN: ${HF_TOKEN:-}
     volumes:
-      - hf-cache:/root/.cache/huggingface
+      - hf-cache:/data/hf
       - ${PROTEA_ADAPTERS_DIR:-./adapters}:/adapters:ro
     deploy:
       resources:

@@ -1,15 +1,23 @@
 # Protea training image for the remote job adapters (ghcr.io/malcolmgov/protea-train).
 # Build:  docker build -f deployment/protea/Dockerfile.train -t ghcr.io/malcolmgov/protea-train:latest .
 FROM pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime
-ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 HF_HUB_ENABLE_HF_TRANSFER=1
-RUN apt-get update && apt-get install -y --no-install-recommends git rsync curl unzip && rm -rf /var/lib/apt/lists/* \
- && curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscli.zip \
+ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 HF_HUB_ENABLE_HF_TRANSFER=1 PYTHONPATH=/workspace/protea
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl git rsync unzip \
+ && rm -rf /var/lib/apt/lists/* \
+ && curl --proto "=https" --tlsv1.2 -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscli.zip \
  && unzip -q /tmp/awscli.zip -d /tmp && /tmp/aws/install && rm -rf /tmp/aws /tmp/awscli.zip
 WORKDIR /workspace/protea
-COPY pyproject.toml README.md LICENSE ./
-COPY protea ./protea
-COPY configs ./configs
-RUN pip install ".[train]"
+# Hash-pinned, wheels-only stack (torch is already in the base image and is pinned to the same version).
+COPY requirements/train-gpu.txt ./requirements/train-gpu.txt
+RUN pip install --only-binary :all: --require-hashes -r requirements/train-gpu.txt \
+ && printf '#!/bin/sh\nexec python -m protea.cli "$@"\n' > /usr/local/bin/protea \
+ && printf '#!/bin/sh\nexec python -m protea.cli_storage "$@"\n' > /usr/local/bin/protea-storage \
+ && chmod +x /usr/local/bin/protea /usr/local/bin/protea-storage \
+ && useradd --create-home --uid 10001 protea && chown -R protea:protea /workspace
+COPY --chown=protea:protea protea ./protea
+COPY --chown=protea:protea configs ./configs
+USER protea
 # The job command comes from the remote adapter plan (`protea train local ...`); secrets from the environment.
 ENTRYPOINT ["bash", "-lc"]
 CMD ["protea train local --help"]

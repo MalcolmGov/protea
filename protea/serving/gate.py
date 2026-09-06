@@ -3,7 +3,6 @@ before anything reaches a caller. A response that still fails is an explicit 422
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import jsonschema
@@ -11,6 +10,8 @@ from pydantic import BaseModel, Field
 
 from protea.providers.base import ModelProvider, extract_json
 from protea.schemas.generation import GenerationRequest, GenerationResponse, Message
+
+MAX_REPAIR_ROUNDS = 3  # hard ceiling; callers may ask for fewer, never more
 
 
 class GateResult(BaseModel):
@@ -33,7 +34,7 @@ def schema_errors(schema: dict[str, Any], obj: Any) -> list[str]:
 def parse_and_validate(schema: dict[str, Any], text: str | None) -> tuple[Any | None, list[str]]:
     try:
         obj = extract_json(text)
-    except (ValueError, json.JSONDecodeError) as exc:
+    except ValueError as exc:
         return None, [f"$: not valid JSON ({str(exc)[:80]})"]
     errors = schema_errors(schema, obj)
     return (obj if not errors else None), errors
@@ -59,9 +60,10 @@ async def generate_validated(
 ) -> GateResult:
     req = request.model_copy(update={"response_schema": schema, "response_schema_name": request.response_schema_name})
     if not provider.supports_native_json_schema:
-        req = provider._with_schema_instruction(req)  # noqa: SLF001 — the provider's own prompt-level fallback
+        req = provider._with_schema_instruction(req)  # the provider's own prompt-level fallback
+    rounds = min(max(int(max_repairs), 0), MAX_REPAIR_ROUNDS)
     result = GateResult(valid=False)
-    for attempt in range(max_repairs + 1):
+    for attempt in range(rounds + 1):
         resp = await provider.generate(req)
         result.responses.append(resp)
         obj, errors = parse_and_validate(schema, resp.content)
@@ -72,7 +74,7 @@ async def generate_validated(
             result.output = obj
             result.repairs = attempt
             return result
-        if attempt < max_repairs:
+        if attempt < rounds:
             req = repair_request(req, resp.content, errors)
-    result.repairs = max_repairs
+    result.repairs = rounds
     return result

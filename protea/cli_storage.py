@@ -15,21 +15,24 @@ app = typer.Typer(
 )
 
 
+HTTPS = "https://"
+
+
 def _fail(msg: str, code: int = 1) -> None:
     typer.secho(msg, err=True, fg=typer.colors.RED)
     raise typer.Exit(code)
 
 
 def _is_remote_path(uri: str) -> bool:
-    return ":" in uri and "@" in uri.split(":", 1)[0] and not uri.startswith(("http://", "https://"))
+    return ":" in uri and "@" in uri.split(":", 1)[0] and not uri.startswith(("http://", HTTPS))
 
 
 def sync_command(src: str, dst: str) -> list[str]:
     """Pick the tool by URI scheme. Both sides may be local; one side may be remote."""
-    remote = src if not Path(src).exists() or src.startswith(("s3://", "https://")) else dst
+    remote = src if not Path(src).exists() or src.startswith(("s3://", HTTPS)) else dst
     if remote.startswith("s3://"):
         return ["aws", "s3", "sync", src, dst]
-    if remote.startswith("https://") and ".blob.core.windows.net" in remote:
+    if remote.startswith(HTTPS) and ".blob.core.windows.net" in remote:
         return ["azcopy", "sync", src, dst, "--recursive=true"]
     if _is_remote_path(remote):
         return ["rsync", "-az", "--partial", src.rstrip("/") + "/", dst.rstrip("/") + "/"]

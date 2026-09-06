@@ -95,4 +95,4 @@ def serve_vllm(
     if shutil.which("vllm") is None:
         _fail("vllm is not installed on this machine (pip install -e '.[vllm]' on the GPU host)")
     args = [a if not a.startswith("$") else os.environ.get(a[1:], "") for a in vllm_args(cfg, adapter_path=adapter)]
-    os.execvp(args[0], args)  # noqa: S606 — replaces this process with the engine so signals reach it directly
+    os.execvp(args[0], args)  # replaces this process with the engine so signals reach it directly
