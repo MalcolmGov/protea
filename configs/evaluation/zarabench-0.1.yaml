@@ -13,7 +13,7 @@ frontier_gate_categories: [structured_output]
 kill_fraction_of_frontier: 0.8        # strategy-review A1
 concurrency: 4
 max_tool_rounds: 3
-max_tokens: 800
+max_tokens: 4000                      # agent specs run to ~2-3k output tokens; 800 truncated every one in the first baseline
 temperature: 0.0
 # USD per million tokens, used only for spend estimates (update from the providers' price pages before a paid run).
 prices:
