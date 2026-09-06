@@ -13,15 +13,20 @@ from collections import Counter
 
 from pydantic import BaseModel
 
-_PHONE = re.compile(
-    r"(?<![\w.])(?:\+?27|0|\+?254|\+?255|\+?256|\+?234)[\s-]?\(?\d{2,3}\)?[\s-]?\d{3}[\s-]?\d{3,4}(?![\w])"
-)
+# Digit-count based so unusual grouping ("0 108 800 011") still matches; separators optional between digits.
+_PHONE_PATTERNS = [
+    re.compile(r"(?<![\w.])(?:\+?27|0)(?:[\s-]?\d){9}(?!\w)"),  # South Africa: 0 / +27 followed by nine digits
+    re.compile(r"(?<![\w.])\+?2(?:54|55|56|34)(?:[\s-]?\d){8,9}(?!\w)"),  # KE, TZ, UG, NG
+]
 _EMAIL = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 _SA_ID = re.compile(r"(?<!\d)\d{13}(?!\d)")
 _CARD = re.compile(r"(?<!\d)(?:\d[ -]?){13,19}(?!\d)")
-_ADDRESS = re.compile(
-    r"\b\d{1,5}\s+[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?\s+(?:Road|Rd|Street|St|Avenue|Ave|Drive|Dr|Lane|Crescent|Close|Way)\b"
-)
+# Two explicit forms (one- and two-word street names) so a non-street trailing word cannot swallow a valid match.
+_ADDRESS_FORMS = [
+    re.compile(r"\b\d{1,5}\s+[A-Z][a-zA-Z]+\s+[A-Z][a-zA-Z]+\s+([A-Z][a-z]+)\b"),
+    re.compile(r"\b\d{1,5}\s+[A-Z][a-zA-Z]+\s+([A-Z][a-z]+)\b"),
+]
+_STREET_WORDS = {"Road", "Rd", "Street", "St", "Avenue", "Ave", "Drive", "Dr", "Lane", "Crescent", "Close", "Way"}
 _PLACEHOLDER_DOMAINS = ("example.com", "example.org", "example.net", "zaraai.digital")
 # Canonical payment-gateway test cards: fictional by definition, kept so guardrail text stays readable.
 _TEST_CARDS = {
@@ -72,13 +77,18 @@ def scan_pii(text: str) -> list[PiiHit]:
     for m in _SA_ID.finditer(t):
         if _sa_id_plausible(m.group(0)):
             hits.append(PiiHit(kind="sa_id", preview=m.group(0)[:2] + "…"))
-    for m in _PHONE.finditer(t):
-        hits.append(PiiHit(kind="phone", preview=m.group(0)[:4] + "…"))
+    for pat in _PHONE_PATTERNS:
+        for m in pat.finditer(t):
+            hits.append(PiiHit(kind="phone", preview=m.group(0)[:4] + "…"))
     for m in _CARD.finditer(t):
         if _card_plausible(m.group(0)):
             hits.append(PiiHit(kind="card", preview="card…"))
-    for m in _ADDRESS.finditer(t):
-        hits.append(PiiHit(kind="address", preview=m.group(0)[:8] + "…"))
+    seen: set[int] = set()
+    for pat in _ADDRESS_FORMS:
+        for m in pat.finditer(t):
+            if m.group(1) in _STREET_WORDS and m.start() not in seen:
+                seen.add(m.start())
+                hits.append(PiiHit(kind="address", preview=m.group(0)[:8] + "…"))
     return hits
 
 
@@ -123,12 +133,16 @@ def redact(text: str, mode: str = "synthetic") -> tuple[str, dict[str, int]]:
         return "[PHONE]" if mode == "placeholder" else _fake_phone(m.group(0))
 
     def sub_addr(m: re.Match[str]) -> str:
+        if m.group(1) not in _STREET_WORDS:
+            return m.group(0)
         counts["address"] += 1
         return "[ADDRESS]" if mode == "placeholder" else f"{_stable(m.group(0), 2)} Example Road"
 
     out = _EMAIL.sub(sub_email, text)
     out = _SA_ID.sub(sub_id, out)
     out = _CARD.sub(sub_card, out)
-    out = _PHONE.sub(sub_phone, out)
-    out = _ADDRESS.sub(sub_addr, out)
+    for pat in _PHONE_PATTERNS:
+        out = pat.sub(sub_phone, out)
+    for pat in _ADDRESS_FORMS:
+        out = pat.sub(sub_addr, out)
     return out, dict(counts)

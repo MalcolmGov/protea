@@ -19,10 +19,19 @@ def _find_assignment(tree: ast.Module, name: str) -> ast.expr | None:
     return None
 
 
+def _call_to_dict(node: ast.Call) -> dict[str, Any] | None:
+    func = node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, "attr", "call")
+    if func == "field":  # dataclasses.field(default_factory=...) → unknown, skip
+        return None
+    out: dict[str, Any] = {"__type__": func}
+    for kw in node.keywords:
+        if kw.arg:
+            out[kw.arg] = _to_value(kw.value)
+    return out
+
+
 def _to_value(node: ast.expr | None) -> Any:
     """Convert literals, lists, dicts and dataclass-style Call(kw=literal) nodes into plain Python values."""
-    if node is None:
-        return None
     if isinstance(node, ast.Constant):
         return node.value
     if isinstance(node, (ast.List, ast.Tuple)):
@@ -30,14 +39,7 @@ def _to_value(node: ast.expr | None) -> Any:
     if isinstance(node, ast.Dict):
         return {_to_value(k): _to_value(v) for k, v in zip(node.keys, node.values, strict=True)}
     if isinstance(node, ast.Call):
-        func = node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, "attr", "call")
-        if func == "field":  # dataclasses.field(default_factory=...) → unknown, skip
-            return None
-        out: dict[str, Any] = {"__type__": func}
-        for kw in node.keywords:
-            if kw.arg:
-                out[kw.arg] = _to_value(kw.value)
-        return out
+        return _call_to_dict(node)
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub) and isinstance(node.operand, ast.Constant):
         return -node.operand.value
     return None

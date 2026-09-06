@@ -66,31 +66,40 @@ def denied(path: str) -> bool:
     return any(s in p for s in DENY_SUBSTRINGS)
 
 
+def _paths_for(root: Path, ex: ExtractorSpec) -> list[Path]:
+    return sorted(root.glob(ex.glob)) if ex.glob else [root / ex.path]  # type: ignore[arg-type]
+
+
+def _artifacts_for(rs: ResolvedSource, ex: ExtractorSpec) -> list[Artifact]:
+    root = Path(rs.root)
+    out = []
+    for p in _paths_for(root, ex):
+        if not p.is_file():
+            continue
+        rel = str(p.relative_to(root))
+        if denied(rel):
+            continue
+        out.append(
+            Artifact(
+                source=rs.spec.name,
+                repo=rs.spec.repo,
+                commit=rs.commit,
+                kind=ex.kind,
+                relpath=rel,
+                abspath=str(p),
+                extractor=ex,
+                license_status=rs.spec.license_status,
+                authored=rs.spec.authored,
+            )
+        )
+    return out
+
+
 def discover(sources: list[ResolvedSource]) -> list[Artifact]:
     artifacts: list[Artifact] = []
     for rs in sources:
         if not rs.exists:
             continue
-        root = Path(rs.root)
         for ex in rs.spec.extractors:
-            paths = sorted(root.glob(ex.glob)) if ex.glob else [root / ex.path]  # type: ignore[arg-type]
-            for p in paths:
-                if not p.is_file():
-                    continue
-                rel = str(p.relative_to(root))
-                if denied(rel):
-                    continue
-                artifacts.append(
-                    Artifact(
-                        source=rs.spec.name,
-                        repo=rs.spec.repo,
-                        commit=rs.commit,
-                        kind=ex.kind,
-                        relpath=rel,
-                        abspath=str(p),
-                        extractor=ex,
-                        license_status=rs.spec.license_status,
-                        authored=rs.spec.authored,
-                    )
-                )
+            artifacts.extend(_artifacts_for(rs, ex))
     return artifacts

@@ -49,18 +49,25 @@ def family_of(agent_id: str, market: str | None = None) -> tuple[str, str | None
 def _from_parts(manifest: dict[str, Any], parts: dict[str, Any], fmt: str, source_path: str) -> AgentPackage:
     agent_id = manifest.get("id") or Path(source_path).stem.replace(".agent", "")
     family, market = family_of(agent_id, manifest.get("market"))
+
+    def text(key: str, default: str = "") -> str:
+        return manifest.get(key) or default
+
+    def items(key: str) -> list[Any]:
+        return list(manifest.get(key) or [])
+
     return AgentPackage(
         id=agent_id,
         family=family,
         market=market,
-        name=manifest.get("name") or agent_id,
-        version=str(manifest.get("version") or "1.0.0"),
-        category=manifest.get("category") or "general",
-        tier=manifest.get("tier") or "standard",
-        summary=manifest.get("summary") or "",
-        channels=list(manifest.get("channels") or []),
-        languages=list(manifest.get("languages") or []),
-        compliance=list(manifest.get("compliance") or []),
+        name=text("name", agent_id),
+        version=str(text("version", "1.0.0")),
+        category=text("category", "general"),
+        tier=text("tier", "standard"),
+        summary=text("summary"),
+        channels=items("channels"),
+        languages=items("languages"),
+        compliance=items("compliance"),
         model=dict(manifest.get("model") or {}),
         handoff=dict(manifest.get("handoff") or {}),
         system_prompt=parts.get("system_prompt") or "",

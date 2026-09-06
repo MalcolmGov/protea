@@ -148,140 +148,138 @@ def _load_package(art: Artifact) -> AgentPackage:
     return load_package_json(p, art.relpath) if art.kind == "agent_package_json" else load_package_dir(p, art.relpath)
 
 
-def build_dataset(
-    cfg: DatasetBuildConfig, protea_root: Path, *, dry_run: bool = False, env: dict[str, str] | None = None
-) -> BuildReport:
-    report = BuildReport(dataset=cfg.key, dry_run=dry_run)
-    sources: list[ResolvedSource] = resolve_sources(cfg, protea_root, env)
-    report.sources = [
-        {"name": s.spec.name, "repo": s.spec.repo, "root": s.root, "commit": s.commit, "exists": s.exists}
-        for s in sources
-    ]
-    artifacts = discover(sources)
-    report.artifacts = len(artifacts)
+class _State:
+    def __init__(self) -> None:
+        self.examples: list[TrainingExample] = []
+        self.seeds: list[ToolCallingSeed] = []
+        self.classification: Counter[str] = Counter()
+        self.redactions: Counter[str] = Counter()
+        self.presets: dict[str, list[dict[str, str]]] = {}
+        self.connectors: list[dict[str, Any]] = []
+        self.packages: list[tuple[Artifact, _PackageScan]] = []
 
+
+def _enabled(cfg: DatasetBuildConfig, recipe: str) -> bool:
+    return recipe not in cfg.recipes or cfg.recipes[recipe].enabled
+
+
+def _scrub_rules(cfg: DatasetBuildConfig, sources: list[ResolvedSource]) -> ScrubRules:
     brand_path = None
     if cfg.scrub.brand_rules_path and ":" in cfg.scrub.brand_rules_path:
         src_name, rel = cfg.scrub.brand_rules_path.split(":", 1)
         src = next((s for s in sources if s.spec.name == src_name), None)
         brand_path = Path(src.root) / rel if src else None
-    rules = ScrubRules.load(brand_path, cfg.scrub.infra_patterns)
+    return ScrubRules.load(brand_path, cfg.scrub.infra_patterns)
 
-    examples: list[TrainingExample] = []
-    seeds: list[ToolCallingSeed] = []
-    classification: Counter[str] = Counter()
-    redactions: Counter[str] = Counter()
-    presets: dict[str, list[dict[str, str]]] = {}
-    connector_catalogue: list[dict[str, Any]] = []
-    packages: list[tuple[Artifact, _PackageScan]] = []
-    recipes = cfg.recipes
 
-    def enabled(name: str) -> bool:
-        return name not in recipes or recipes[name].enabled
-
-    # ---- non-package artefacts first (registries feed the package recipes) ----
+def _collect_registry_artifacts(
+    artifacts: list[Artifact], cfg: DatasetBuildConfig, state: _State, report: BuildReport
+) -> None:
+    """Presets, connector catalogue, routing corpus and flagship specs. Registries must load before packages."""
     for art in artifacts:
         try:
             if art.kind == "presets_ts":
-                presets.update(load_presets(Path(art.abspath)))
+                state.presets.update(load_presets(Path(art.abspath)))
             elif art.kind == "python_registry" and art.extractor.entity == "connector":
-                connector_catalogue.extend(registry_entries(Path(art.abspath), art.extractor.variable or ""))
-            elif art.kind == "routing_corpus" and enabled("routing"):
+                state.connectors.extend(registry_entries(Path(art.abspath), art.extractor.variable or ""))
+            elif art.kind == "routing_corpus" and _enabled(cfg, "routing"):
                 corpus = load_literal(Path(art.abspath), art.extractor.variable or "CORPUS")
-                examples.extend(routing_examples(art, corpus, cfg.version, cfg.prompts))
-            elif art.kind == "flagship_specs" and enabled("structured_output"):
+                state.examples.extend(routing_examples(art, corpus, cfg.version, cfg.prompts))
+            elif art.kind == "flagship_specs" and _enabled(cfg, "structured_output"):
                 specs = load_literal(Path(art.abspath), art.extractor.variable or "FLAGSHIP_AGENTS")
-                examples.extend(flagship_examples(art, specs, cfg.version, cfg.prompts))
-        except (ValueError, OSError, json.JSONDecodeError, SyntaxError) as exc:
+                state.examples.extend(flagship_examples(art, specs, cfg.version, cfg.prompts))
+        except (ValueError, OSError, SyntaxError) as exc:
             report.rejected.append({"artifact": art.relpath, "reason": f"extract failed: {exc}"})
 
-    # ---- packages ----
+
+def _collect_packages(
+    artifacts: list[Artifact], rules: ScrubRules, cfg: DatasetBuildConfig, state: _State, report: BuildReport
+) -> None:
     for art in artifacts:
         if art.kind not in ("agent_package_json", "agent_package_dir"):
             continue
         try:
             pkg = _load_package(art)
-        except (ValueError, OSError, json.JSONDecodeError) as exc:
+        except (ValueError, OSError) as exc:
             report.rejected.append({"artifact": art.relpath, "reason": f"load failed: {exc}"})
             continue
         scan = _scrub_package(pkg, rules, art, cfg, report)
         report.scrubbed += scan.scrubbed
-        redactions.update(scan.redactions)
+        state.redactions.update(scan.redactions)
         for field, d in scan.decisions.items():
-            classification[f"{field}:{d.classification.value}"] += 1
-        packages.append((art, scan))
-    report.packages = len(packages)
-    report.packages_by_source = dict(Counter(a.source for a, _ in packages))
+            state.classification[f"{field}:{d.classification.value}"] += 1
+        state.packages.append((art, scan))
+    report.packages = len(state.packages)
+    report.packages_by_source = dict(Counter(a.source for a, _ in state.packages))
 
-    for art, scan in packages:
-        pkg = scan.pkg
-        core_ok = all(scan.decisions[f].trainable for f in ("manifest", "system_prompt", "tools", "guardrails"))
-        if not core_ok:
-            blocked = {
-                f: d.classification.value
-                for f, d in scan.decisions.items()
-                if not d.trainable and f != "knowledge" and f != "evals"
-            }
-            report.rejected.append({"artifact": art.relpath, "reason": f"core fields not trainable: {blocked}"})
-            continue
-        if enabled("agent_generation"):
-            examples.append(agent_generation_example(art, pkg, cfg.version, cfg.prompts, scan.redactions))
-        if enabled("structured_output"):
-            examples.append(manifest_example(art, pkg, cfg.version, cfg.prompts, scan.redactions))
-        if enabled("connector_selection") and presets:
-            bindings = presets.get(pkg.id) or presets.get(pkg.family) or []
-            ex = connector_selection_example(art, pkg, bindings, connector_catalogue, cfg.version, cfg.prompts)
-            if ex:
-                examples.append(ex)
-        if enabled("tool_calling"):
-            evals_decision = scan.decisions["evals"]
-            if evals_decision.classification in (Classification.SAFE_FOR_TRAINING, Classification.REQUIRES_REVIEW):
-                limit = recipes.get("tool_calling").max_per_source_item if "tool_calling" in recipes else None
-                new_seeds, rejected = tool_calling_seeds(art, pkg, scan.contaminated_ids, limit)
-                seeds.extend(new_seeds)
-                report.seeds_rejected += len(rejected)
-                for eid, problems in rejected[:5]:
-                    report.rejected.append({"artifact": f"{art.relpath}#{eid}", "reason": "; ".join(problems)})
 
-    # ---- dedup, splits, golden ----
+def _emit_package(
+    art: Artifact, scan: _PackageScan, cfg: DatasetBuildConfig, state: _State, report: BuildReport
+) -> None:
+    pkg = scan.pkg
+    core = ("manifest", "system_prompt", "tools", "guardrails")
+    if not all(scan.decisions[f].trainable for f in core):
+        blocked = {f: scan.decisions[f].classification.value for f in core if not scan.decisions[f].trainable}
+        report.rejected.append({"artifact": art.relpath, "reason": f"core fields not trainable: {blocked}"})
+        return
+    if _enabled(cfg, "agent_generation"):
+        state.examples.append(agent_generation_example(art, pkg, cfg.version, cfg.prompts, scan.redactions))
+    if _enabled(cfg, "structured_output"):
+        state.examples.append(manifest_example(art, pkg, cfg.version, cfg.prompts, scan.redactions))
+    if _enabled(cfg, "connector_selection") and state.presets:
+        bindings = state.presets.get(pkg.id) or state.presets.get(pkg.family) or []
+        ex = connector_selection_example(art, pkg, bindings, state.connectors, cfg.version, cfg.prompts)
+        if ex:
+            state.examples.append(ex)
+    if _enabled(cfg, "tool_calling") and scan.decisions["evals"].classification in (
+        Classification.SAFE_FOR_TRAINING,
+        Classification.REQUIRES_REVIEW,
+    ):
+        limit = cfg.recipes["tool_calling"].max_per_source_item if "tool_calling" in cfg.recipes else None
+        new_seeds, rejected = tool_calling_seeds(art, pkg, scan.contaminated_ids, limit)
+        state.seeds.extend(new_seeds)
+        report.seeds_rejected += len(rejected)
+        report.rejected.extend(
+            {"artifact": f"{art.relpath}#{eid}", "reason": "; ".join(problems)} for eid, problems in rejected[:5]
+        )
+
+
+def _finalise(cfg: DatasetBuildConfig, state: _State, report: BuildReport) -> list[str]:
+    examples = state.examples
     report.duplicates = mark_duplicates(examples, cfg.dedup_threshold)
-    report.examples_by_split = assign_splits(examples, cfg.splits, cfg.split_seed)
+    assign_splits(examples, cfg.splits, cfg.split_seed)
     golden_ids = select_golden(examples, cfg.golden)
     report.golden = len(golden_ids)
     report.examples_by_split = dict(Counter(e.metadata.split.value for e in examples if e.metadata.split))
     report.examples_by_task = dict(Counter(e.metadata.task_type.value for e in examples))
-    report.classification = dict(classification)
-    report.redactions = dict(redactions)
-    report.seeds = len(seeds)
-    report.seeds_contaminated = sum(1 for s in seeds if s.contaminated)
+    report.classification = dict(state.classification)
+    report.redactions = dict(state.redactions)
+    report.seeds = len(state.seeds)
+    report.seeds_contaminated = sum(1 for s in state.seeds if s.contaminated)
     report.approx_tokens = sum(e.approx_tokens() for e in examples)
     report.families = len({e.metadata.family for e in examples if e.metadata.family})
     report.domains = len({e.metadata.domain for e in examples})
     report.languages = dict(Counter(e.metadata.language for e in examples))
-    if dry_run:
-        return report
+    return golden_ids
 
+
+def _write_outputs(
+    cfg: DatasetBuildConfig, protea_root: Path, state: _State, report: BuildReport, golden_ids: list[str]
+) -> None:
     out = (protea_root / cfg.output_dir).resolve()
-    out.mkdir(parents=True, exist_ok=True)
-    (out / "seeds").mkdir(exist_ok=True)
+    (out / "seeds").mkdir(parents=True, exist_ok=True)
     files: dict[str, Path] = {s.value: out / f"{s.value}.jsonl" for s in Split}
     handles = {k: p.open("w", encoding="utf-8") for k, p in files.items()}
     try:
-        for ex in examples:
-            if ex.metadata.duplicate_of:
-                continue
-            handles[ex.metadata.split.value].write(ex.model_dump_json() + "\n")  # type: ignore[union-attr]
+        for ex in state.examples:
+            if not ex.metadata.duplicate_of:
+                handles[ex.metadata.split.value].write(ex.model_dump_json() + "\n")  # type: ignore[union-attr]
     finally:
         for h in handles.values():
             h.close()
     seeds_path = out / "seeds" / "tool_calling_seeds.jsonl"
-    with seeds_path.open("w", encoding="utf-8") as fh:
-        for s in seeds:
-            fh.write(s.model_dump_json() + "\n")
-    rejected_path = out / "rejected.jsonl"
-    with rejected_path.open("w", encoding="utf-8") as fh:
-        for r in report.rejected:
-            fh.write(json.dumps(r) + "\n")
+    seeds_path.write_text("".join(s.model_dump_json() + "\n" for s in state.seeds), encoding="utf-8")
+    (out / "rejected.jsonl").write_text("".join(json.dumps(r) + "\n" for r in report.rejected), encoding="utf-8")
 
     stats = {name: validate_jsonl(p).model_dump(mode="json") for name, p in files.items()}
     manifest = {
@@ -295,7 +293,7 @@ def build_dataset(
         },
         "seeds": {
             "path": "seeds/tool_calling_seeds.jsonl",
-            "count": len(seeds),
+            "count": len(state.seeds),
             "contaminated": report.seeds_contaminated,
         },
         "golden_ids": golden_ids,
@@ -332,6 +330,27 @@ def build_dataset(
                 status=DatasetStatus.DRAFT,
             )
         )
+
+
+def build_dataset(
+    cfg: DatasetBuildConfig, protea_root: Path, *, dry_run: bool = False, env: dict[str, str] | None = None
+) -> BuildReport:
+    report = BuildReport(dataset=cfg.key, dry_run=dry_run)
+    sources = resolve_sources(cfg, protea_root, env)
+    report.sources = [
+        {"name": s.spec.name, "repo": s.spec.repo, "root": s.root, "commit": s.commit, "exists": s.exists}
+        for s in sources
+    ]
+    artifacts = discover(sources)
+    report.artifacts = len(artifacts)
+    state = _State()
+    _collect_registry_artifacts(artifacts, cfg, state, report)
+    _collect_packages(artifacts, _scrub_rules(cfg, sources), cfg, state, report)
+    for art, scan in state.packages:
+        _emit_package(art, scan, cfg, state, report)
+    golden_ids = _finalise(cfg, state, report)
+    if not dry_run:
+        _write_outputs(cfg, protea_root, state, report, golden_ids)
     return report
 
 

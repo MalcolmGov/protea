@@ -189,6 +189,26 @@ class ToolCallingSeed(BaseModel):
     authored: bool = False
 
 
+def _unknown_tool_refs(ex: dict[str, Any], tool_names: set[str]) -> list[str]:
+    problems = []
+    if "tool" in ex and ex["tool"] not in tool_names:
+        problems.append(f"expect.tool names unknown tool {ex['tool']!r}")
+    for key in ("tool_any", "tool_none"):
+        problems.extend(
+            f"expect.{key} names unknown tool {name!r}" for name in ex.get(key) or [] if name not in tool_names
+        )
+    return problems
+
+
+def _contradictions(ex: dict[str, Any]) -> list[str]:
+    problems = []
+    if ex.get("no_tool") and ("tool" in ex or ex.get("tool_any")):
+        problems.append("contradictory: no_tool with a required tool")
+    if "tool" in ex and ex["tool"] in (ex.get("tool_none") or []):
+        problems.append("contradictory: tool required and forbidden")
+    return problems
+
+
 def eval_rule_checks(e: dict[str, Any], tool_names: set[str]) -> list[str]:
     """Deterministic checks on an eval before it becomes a seed. Returns a list of problems (empty = passes)."""
     problems = []
@@ -197,17 +217,8 @@ def eval_rule_checks(e: dict[str, Any], tool_names: set[str]) -> list[str]:
         problems.append("missing input")
     if not ex:
         problems.append("missing expect")
-    for key in ("tool",):
-        if key in ex and ex[key] not in tool_names:
-            problems.append(f"expect.{key} names unknown tool {ex[key]!r}")
-    for key in ("tool_any", "tool_none"):
-        for name in ex.get(key) or []:
-            if name not in tool_names:
-                problems.append(f"expect.{key} names unknown tool {name!r}")
-    if ex.get("no_tool") and ("tool" in ex or ex.get("tool_any")):
-        problems.append("contradictory: no_tool with a required tool")
-    if "tool" in ex and ex["tool"] in (ex.get("tool_none") or []):
-        problems.append("contradictory: tool required and forbidden")
+    problems += _unknown_tool_refs(ex, tool_names)
+    problems += _contradictions(ex)
     lang = e.get("lang") or "en"
     if lang not in LANGUAGE_TAGS:
         problems.append(f"unknown language tag {lang!r}")

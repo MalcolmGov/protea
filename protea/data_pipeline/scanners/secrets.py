@@ -24,7 +24,7 @@ _RULES: list[tuple[str, re.Pattern[str]]] = [
         "password_assignment",
         re.compile(r"(?i)\b(?:password|passwd|secret|api[_-]?key)\s*[:=]\s*['\"][^'\"\s]{8,}['\"]"),
     ),
-    ("database_url", re.compile(r"\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?)://[^\s'\"]*:[^\s'\"@]+@")),
+    ("database_url", re.compile(r"\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?)://[^\s'\"@:]+:[^\s'\"@]+@")),
 ]
 
 

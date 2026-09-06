@@ -3,18 +3,27 @@
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
-_ARRAY = re.compile(r"GENERATED_PRESETS\s*:\s*GeneratedPreset\[\]\s*=\s*(\[.*\])\s*;?\s*$", re.DOTALL)
+
+def _array_text(text: str) -> str:
+    """Slice the JSON array assigned to GENERATED_PRESETS with plain string searches (linear, no backtracking)."""
+    anchor = text.find("GENERATED_PRESETS")
+    if anchor == -1:
+        raise ValueError("GENERATED_PRESETS not found")
+    eq = text.find("=", anchor)
+    start = text.find("[", eq if eq != -1 else anchor)
+    end = text.rfind("]")
+    if start == -1 or end <= start:
+        raise ValueError("GENERATED_PRESETS array not found")
+    return text[start : end + 1]
 
 
 def load_presets(path: Path) -> dict[str, list[dict[str, str]]]:
-    text = path.read_text(encoding="utf-8")
-    m = _ARRAY.search(text)
-    if not m:
-        raise ValueError(f"{path}: GENERATED_PRESETS array not found")
-    data = json.loads(m.group(1))
+    try:
+        data = json.loads(_array_text(path.read_text(encoding="utf-8")))
+    except ValueError as exc:
+        raise ValueError(f"{path}: {exc}") from exc
     out: dict[str, list[dict[str, str]]] = {}
     for preset in data:
         bindings = [

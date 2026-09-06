@@ -36,7 +36,7 @@ def select_golden(examples: list[TrainingExample], golden: GoldenSpec) -> list[s
         if ex.metadata.split == Split.TEST and not ex.metadata.duplicate_of:
             by_task.setdefault(ex.metadata.task_type.value, []).append(ex)
     for task, items in by_task.items():
-        items.sort(key=lambda e: _bucket(f"golden:{task}:{e.metadata.id}", golden.seed))
+        items.sort(key=lambda e, task=task: _bucket(f"golden:{task}:{e.metadata.id}", golden.seed))
         for ex in items[: golden.per_task_type]:
             ex.metadata.split = Split.GOLDEN
             chosen.append(ex.metadata.id)
