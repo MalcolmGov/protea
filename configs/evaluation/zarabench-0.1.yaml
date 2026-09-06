@@ -2,9 +2,27 @@
 # Weights favour the v0 priorities (§64). min_score values are release gates per category.
 suite: zarabench
 version: 0.1.0
-judge_model: null                     # set per run; must differ from any synthetic-data generator
+tasks_path: evaluation/zarabench/0.1/tasks.jsonl
+lock_path: evaluation/zarabench/0.1/golden.lock
+judge_provider: null                  # e.g. anthropic; set per run and never the model under test
+judge_model: null                     # must differ from any synthetic-data generator (registry generator_models)
 judge_must_differ_from_generator: true
 release_min_zarascore: 0.0            # set once baselines exist; never release on training loss
+priority_categories: [agent_generation, structured_output, tool_calling, connector_selection]
+frontier_gate_categories: [structured_output]
+kill_fraction_of_frontier: 0.8        # strategy-review A1
+concurrency: 4
+max_tool_rounds: 3
+max_tokens: 800
+temperature: 0.0
+# USD per million tokens, used only for spend estimates (update from the providers' price pages before a paid run).
+prices:
+  claude-opus-5: {input: 5.0, output: 25.0}
+  claude-sonnet-5: {input: 3.0, output: 15.0}
+  claude-haiku-4-5: {input: 1.0, output: 5.0}
+  gpt-5: {input: 1.25, output: 10.0}
+  gemini-2.5-pro: {input: 1.25, output: 10.0}
+  Qwen/Qwen3-8B: {input: 0.0, output: 0.0}   # self-hosted: GPU time is accounted separately
 categories:
   - {name: agent_generation,     weight: 0.20, min_score: 0.0}
   - {name: structured_output,    weight: 0.15, min_score: 0.0}

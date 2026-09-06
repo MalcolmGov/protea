@@ -128,14 +128,40 @@ class CategoryWeight(BaseModel):
     min_score: float = 0.0  # release gate threshold for this category
 
 
+class TokenPrice(BaseModel):
+    """USD per million tokens; used only to estimate benchmark spend before and after a run."""
+
+    input: float
+    output: float
+
+
 class EvaluationConfig(BaseModel):
     suite: str
     version: str
     categories: list[CategoryWeight]
+    tasks_path: str | None = None  # JSONL of EvalTask, relative to the repository root
+    lock_path: str | None = None  # golden lock (sha256 + held-out families) written by `evaluate seal`
+    judge_provider: str | None = None
     judge_model: str | None = None
     judge_must_differ_from_generator: bool = True
     release_min_zarascore: float = 0.0
     latency_budget_ms: int | None = None
+    priority_categories: list[str] = Field(
+        default_factory=lambda: ["agent_generation", "structured_output", "tool_calling", "connector_selection"]
+    )
+    frontier_gate_categories: list[str] = Field(default_factory=lambda: ["structured_output"])
+    kill_fraction_of_frontier: float = 0.8  # strategy-review A1: stop training below this share of the frontier score
+    concurrency: int = 4
+    max_tool_rounds: int = 3
+    max_tokens: int = 800
+    temperature: float = 0.0
+    prices: dict[str, TokenPrice] = Field(default_factory=dict)  # model id (or prefix) -> price
+
+    def price_for(self, model: str) -> TokenPrice | None:
+        for key in sorted(self.prices, key=len, reverse=True):
+            if model.startswith(key):
+                return self.prices[key]
+        return None
 
     @model_validator(mode="after")
     def _weights(self) -> EvaluationConfig:

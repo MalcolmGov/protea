@@ -1,6 +1,6 @@
 # Protea v0 — Implementation Roadmap
 
-**Date:** 2026-09-06 · **Status:** Phase 0 complete (this document); Phases 1–10 planned.
+**Date:** 2026-09-06 · **Status:** Phases 0–3 implemented (see `README.md` status table); Phases 4–10 planned. Baselines (Phase 3 step 5) await confirmation.
 Status vocabulary used throughout: `implemented` · `partially implemented` · `planned` · `blocked`.
 
 ## 0. Phase 0 outcome
@@ -35,8 +35,8 @@ Rough seed volume before synthetic augmentation: **≈1,500–2,500 traceable ex
 
 1. AgentSpec v3 schema + JSON Schema export + converters (Phase 1).
 2. Extractors with allowlist paths, classifier, secret/PII/brand scrub, contamination check, family-aware dedup, manifests, dataset card (Phase 2).
-3. Golden set (≥150 tasks across the 10 ZaraBench categories) sealed and hash-pinned before any training data is finalised (Phase 3).
-4. ZaraBench harness with mock provider tests passing; baseline runs of the unmodified candidate base model and at least one frontier model, stored in `evaluation/reports` (Phase 3).
+3. Golden set (≥150 tasks across the 10 ZaraBench categories) sealed and hash-pinned before any training data is finalised (Phase 3). — implemented: 206 tasks, `evaluation/zarabench/0.1/golden.lock`, verified in CI.
+4. ZaraBench harness with mock provider tests passing; baseline runs of the unmodified candidate base model and at least one frontier model, stored in `evaluation/reports` (Phase 3). — harness implemented (ADR-007); baselines pending confirmation (`docs/zarabench.md`).
 5. Training configs (YAML), tiny-model dry run on CPU, remote job adapter with `--dry-run` cost display and explicit confirmation (Phase 4).
 6. Experiment tracking + model registry entries created for the run (Phase 4).
 

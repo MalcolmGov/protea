@@ -16,3 +16,6 @@ checkpoints/
 *.safetensors
 *.gguf
 mlruns/
+# benchmark reports are committed deliberately (baselines); harness self-checks are not
+evaluation/reports/**/mock-*
+evaluation/reports/**/reference-*

@@ -9,7 +9,7 @@ The programme was specified under the working name "ZaraLM". Phase 0 discovery i
 | Area | Status |
 |---|---|
 | Phase 0 discovery documents | implemented — `docs/` |
-| CLI: `doctor`, `version`, `roadmap`, `config validate|show`, `providers list|health`, `dataset validate|stats`, `registry datasets|models|promote` | implemented |
+| CLI: `doctor`, `version`, `roadmap`, `config validate|show`, `providers list|health`, `dataset validate|stats|build|golden-check|synthesize`, `registry datasets|models|promote`, `evaluate tasks|author|seal|verify|run|compare` | implemented |
 | Generation contract + `ModelProvider` with Anthropic, OpenAI, Google, Azure OpenAI, Ollama, Protea (vLLM) and mock adapters | implemented — Phase 1 (ADR-002) |
 | Training-example schema with provenance envelope and JSONL validation | implemented — Phase 1 (ADR-003) |
 | Dataset and model registries with release lifecycle | implemented — Phase 1 (ADR-004) |
@@ -17,7 +17,7 @@ The programme was specified under the working name "ZaraLM". Phase 0 discovery i
 | Model selection (desk assessment) | implemented — `docs/model-selection.md`; measured in Phase 3 |
 | Data pipeline: allowlist discovery, classification, secret/PII/brand/contamination scanners, extractors, normalisers, family splits, golden guard, manifests and cards (`dataset build|golden-check`) | implemented — Phase 2 (ADR-006) |
 | Eval-seeded synthetic tool-calling (`dataset synthesize`, gated) | implemented — Phase 2; teacher policy pending |
-| Evaluation framework + ZaraBench suite | planned — Phase 3 |
+| Evaluation framework: task contract, evaluators, LLM judge, runner, reports, release gate + kill criterion; ZaraBench 0.1 sealed (206 tasks, 10 categories) (`evaluate author|seal|verify|run|compare`) | implemented — Phase 3 (ADR-007); base-model and frontier baselines await confirmation |
 | Training (SFT / LoRA / QLoRA, remote GPU) | planned — Phase 4 |
 | Inference (vLLM, OpenAI-compatible) | planned — Phase 5 |
 | Router, fallback, confidence | planned — Phase 7 |
@@ -34,7 +34,9 @@ protea/
   config/                environment settings, YAML schemas, loader + content hash
   registry/              file-backed dataset and model registries
   data_pipeline/         sources, discovery, classify, scanners/, extractors/, normalize/, dedup, splits, build, synthetic
+  evaluation/            tasks, driver, evaluators, judge, runner, report, golden, reference, authoring (ZaraBench)
 configs/                 models/, training/, inference/, evaluation/, datasets/ (validated in CI)
+evaluation/              sealed ZaraBench task sets + golden locks, committed baseline reports
 registry/                datasets.json, models.json (source of truth for releases)
 docs/                    Phase 0 documents, ADRs, model selection
 tests/                   pytest; everything here runs without a GPU

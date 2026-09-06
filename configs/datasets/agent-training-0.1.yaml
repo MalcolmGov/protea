@@ -3,6 +3,7 @@
 name: agent-training
 version: 0.1.0
 output_dir: protea_data/agent-training/0.1.0
+# holdout_lock: evaluation/zarabench/0.1/golden.lock   # enable for 0.2: sealed families never enter train/validation
 split_seed: 42
 dedup_threshold: 0.92
 contamination_threshold: 0.5

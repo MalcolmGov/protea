@@ -52,11 +52,15 @@ def test_synthesize_with_mock_provider(tmp_path):
     assert runner.invoke(app, ["dataset", "build", "--config", str(cfg), "--root", str(root)]).exit_code == 0
     seeds = root / "build/fixture/seeds/tool_calling_seeds.jsonl"
     out = tmp_path / "syn.jsonl"
-    result = runner.invoke(
-        app, ["dataset", "synthesize", str(seeds), "--provider", "mock", "--limit", "5", "--out", str(out)]
-    )
+    no_lock = str(tmp_path / "no.lock")
+    args = ["dataset", "synthesize", str(seeds), "--provider", "mock", "--limit", "5", "--out", str(out)]
+    result = runner.invoke(app, [*args, "--golden-lock", no_lock])
     assert result.exit_code == 0, result.output
     assert "seeds 5" in result.output
+    # the fixture packages share families with the sealed ZaraBench set, so the default lock skips them
+    sealed = runner.invoke(app, args)
+    assert sealed.exit_code == 0, sealed.output
+    assert "held out by" in sealed.output
     # the mock answers "OK" without tools, so seeds that require a tool are rejected and reported
     assert "rejected" in result.output
     assert out.exists()
