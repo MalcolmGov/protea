@@ -65,6 +65,12 @@ def _payload(outcome: RouteOutcome) -> dict[str, Any]:
     return out
 
 
+def _responses(outcome: RouteOutcome) -> list:
+    if outcome.gate is not None:
+        return list(outcome.gate.responses)
+    return [outcome.response] if outcome.response is not None else []
+
+
 async def _run(body: RoutedRequest, request: Request, state: FacadeState, router: ModelRouter, schema: dict | None):
     gen = body.request
     gen.metadata.tenant_ref = gen.metadata.tenant_ref or _tenant_ref(request)
@@ -85,7 +91,7 @@ async def _run(body: RoutedRequest, request: Request, state: FacadeState, router
     state.metrics.inc("protea_route_total", {"route": outcome.served_route or "none", "ok": str(outcome.ok).lower()})
     if outcome.event.fallbacks:
         state.metrics.inc("protea_route_fallbacks_total", value=len(outcome.event.fallbacks))
-    for r in outcome.gate.responses if outcome.gate else ([outcome.response] if outcome.response else []):
+    for r in _responses(outcome):
         state.account(r)
     payload = _payload(outcome)
     if outcome.ok:
@@ -95,7 +101,12 @@ async def _run(body: RoutedRequest, request: Request, state: FacadeState, router
     return JSONResponse(payload, status_code=422)
 
 
-@route_api.post("/generate", responses={422: {"description": "every route failed confidence or finish checks"}})
+_NO_ROUTE = {409: {"description": "no route may serve the request (privacy / task policy)"}}
+
+
+@route_api.post(
+    "/generate", responses={**_NO_ROUTE, 422: {"description": "every route failed confidence or finish checks"}}
+)
 async def route_generate(
     body: RoutedRequest,
     request: Request,
@@ -106,7 +117,14 @@ async def route_generate(
     return await _run(body, request, state, router, None)
 
 
-@route_api.post("/structured", responses={422: {"description": "no route produced schema-valid output"}})
+@route_api.post(
+    "/structured",
+    responses={
+        **_NO_ROUTE,
+        400: {"description": "schema is required"},
+        422: {"description": "no route produced schema-valid output"},
+    },
+)
 async def route_structured(
     body: RoutedRequest,
     request: Request,
