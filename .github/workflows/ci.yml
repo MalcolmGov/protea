@@ -21,6 +21,9 @@ jobs:
       - run: pytest -q
       - run: protea doctor
       - run: protea config validate configs
+      - run: protea evaluate verify
+      - name: Reference answers must satisfy every evaluator
+        run: protea evaluate run --provider reference --out /tmp/zarabench-reports --label ci
   secrets:
     runs-on: ubuntu-latest
     steps:

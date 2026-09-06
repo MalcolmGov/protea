@@ -10,6 +10,7 @@ import typer
 
 from protea import __version__
 from protea import doctor as _doctor
+from protea.cli_evaluate import evaluate_app
 
 app = typer.Typer(help="Protea — Moove Digital's proprietary model platform.", no_args_is_help=True)
 config_app = typer.Typer(help="Validate and inspect YAML configuration.", no_args_is_help=True)
@@ -20,10 +21,10 @@ app.add_typer(config_app, name="config")
 app.add_typer(providers_app, name="providers")
 app.add_typer(dataset_app, name="dataset")
 app.add_typer(registry_app, name="registry")
+app.add_typer(evaluate_app, name="evaluate")
 
 PLANNED = {
-    "dataset build": "Phase 2 — extractors, classifiers, scanners, dedup, exporters",
-    "evaluate / benchmark": "Phase 3 — evaluation framework and ZaraBench suite",
+    "evaluate run --provider <base model>": "Phase 3 — needs a GPU host or a hosted inference endpoint (execution boundary)",
     "train local|remote --dry-run": "Phase 4 — training and remote GPU adapters",
     "serve": "Phase 5 — vLLM container and facade",
 }
@@ -229,10 +230,14 @@ def dataset_synthesize(
     out: Path = typer.Option(Path("synthetic_tool_calling.jsonl")),
     confirm: bool = typer.Option(False, "--confirm", help="Required for non-mock providers."),
     include_contaminated: bool = typer.Option(False, help="Also process seeds flagged by the contamination check."),
+    golden_lock: Path = typer.Option(
+        Path("evaluation/zarabench/0.1/golden.lock"), help="Seeds from families sealed in this lock are skipped."
+    ),
 ) -> None:
     """Complete eval-seeded tool-calling turns with a teacher model and keep only completions that satisfy the eval expectations."""
     from protea.data_pipeline.normalize.packages import ToolCallingSeed
     from protea.data_pipeline.synthetic import synthesize
+    from protea.evaluation.golden import held_out_families
     from protea.providers import ProviderNotConfigured, build_provider
     from protea.schemas.examples import iter_examples
 
@@ -246,10 +251,15 @@ def dataset_synthesize(
     except ProviderNotConfigured as exc:
         _fail(str(exc))
         return
+    held_out = held_out_families(golden_lock)
     items = []
+    skipped_held_out = 0
     for _, line in iter_examples(seeds):
         s = ToolCallingSeed.model_validate_json(line)
         if s.contaminated and not include_contaminated:
+            continue
+        if s.family in held_out:
+            skipped_held_out += 1
             continue
         items.append(s)
         if len(items) >= limit:
@@ -264,6 +274,8 @@ def dataset_synthesize(
         for r in ok:
             fh.write(r.example.model_dump_json() + "\n")  # type: ignore[union-attr]
     typer.echo(f"seeds {len(items)}  accepted {len(ok)}  rejected {len(results) - len(ok)}  -> {out}")
+    if skipped_held_out:
+        typer.echo(f"skipped {skipped_held_out} seed(s) from families held out by {golden_lock}")
     for r in [r for r in results if not r.ok][:10]:
         typer.secho(f"  {r.seed_id}: {'; '.join(r.problems)}", fg=typer.colors.YELLOW)
 

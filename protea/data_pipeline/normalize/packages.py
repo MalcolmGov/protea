@@ -188,6 +188,12 @@ class ToolCallingSeed(BaseModel):
     contaminated: bool = False
     authored: bool = False
 
+    def system_message(self, *, include_knowledge: bool = True) -> str:
+        system = DEFAULT_PROMPTS["tool_calling"].format(agent_name=self.agent_id) + "\n\n" + self.system_prompt
+        if include_knowledge and self.knowledge_excerpt:
+            system += "\n\nBusiness information:\n" + self.knowledge_excerpt
+        return system
+
 
 def _unknown_tool_refs(ex: dict[str, Any], tool_names: set[str]) -> list[str]:
     problems = []

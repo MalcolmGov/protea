@@ -29,6 +29,7 @@ from protea.data_pipeline.scanners.pii import redact, scan_pii
 from protea.data_pipeline.scanners.secrets import scan_secrets
 from protea.data_pipeline.sources import DatasetBuildConfig
 from protea.data_pipeline.splits import assign_splits, select_golden
+from protea.evaluation.golden import held_out_families
 from protea.registry.store import DatasetRegistry, sha256_file
 from protea.schemas.examples import Split, TrainingExample, validate_jsonl
 from protea.schemas.registry import DatasetEntry, DatasetStatus, SourceRef
@@ -47,6 +48,7 @@ class BuildReport(BaseModel):
     examples_by_split: dict[str, int] = Field(default_factory=dict)
     duplicates: int = 0
     golden: int = 0
+    held_out_forced: int = 0  # examples moved to test because their family is sealed in the ZaraBench golden lock
     seeds: int = 0
     seeds_contaminated: int = 0
     seeds_rejected: int = 0
@@ -68,7 +70,8 @@ class BuildReport(BaseModel):
             f"artifacts        {self.artifacts}   packages {self.packages} {self.packages_by_source}",
             f"classification   {self.classification}",
             f"examples         {sum(self.examples_by_task.values())} {self.examples_by_task}",
-            f"splits           {self.examples_by_split}   golden {self.golden}   duplicates {self.duplicates}",
+            f"splits           {self.examples_by_split}   golden {self.golden}   duplicates {self.duplicates}"
+            + (f"   held-out forced to test {self.held_out_forced}" if self.held_out_forced else ""),
             f"tool seeds       {self.seeds} (contaminated {self.seeds_contaminated}, rejected {self.seeds_rejected})",
             f"families/domains {self.families}/{self.domains}   languages {self.languages}",
             f"scrub            brand/infra {self.scrubbed}   pii redactions {self.redactions}   secrets {self.secret_findings}",
@@ -244,10 +247,20 @@ def _emit_package(
         )
 
 
-def _finalise(cfg: DatasetBuildConfig, state: _State, report: BuildReport) -> list[str]:
+def _force_holdout(examples: list[TrainingExample], held_out: set[str]) -> int:
+    moved = 0
+    for ex in examples:
+        if ex.metadata.family in held_out and ex.metadata.split in (Split.TRAIN, Split.VALIDATION):
+            ex.metadata.split = Split.TEST
+            moved += 1
+    return moved
+
+
+def _finalise(cfg: DatasetBuildConfig, state: _State, report: BuildReport, held_out: set[str]) -> list[str]:
     examples = state.examples
     report.duplicates = mark_duplicates(examples, cfg.dedup_threshold)
     assign_splits(examples, cfg.splits, cfg.split_seed)
+    report.held_out_forced = _force_holdout(examples, held_out)
     golden_ids = select_golden(examples, cfg.golden)
     report.golden = len(golden_ids)
     report.examples_by_split = dict(Counter(e.metadata.split.value for e in examples if e.metadata.split))
@@ -348,7 +361,8 @@ def build_dataset(
     _collect_packages(artifacts, _scrub_rules(cfg, sources), cfg, state, report)
     for art, scan in state.packages:
         _emit_package(art, scan, cfg, state, report)
-    golden_ids = _finalise(cfg, state, report)
+    held_out = held_out_families(protea_root / cfg.holdout_lock) if cfg.holdout_lock else set()
+    golden_ids = _finalise(cfg, state, report, held_out)
     if not dry_run:
         _write_outputs(cfg, protea_root, state, report, golden_ids)
     return report

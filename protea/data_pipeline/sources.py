@@ -80,6 +80,7 @@ class DatasetBuildConfig(BaseModel):
     recipes: dict[str, RecipeSpec] = Field(default_factory=dict)
     splits: SplitRatios = Field(default_factory=SplitRatios)
     golden: GoldenSpec = Field(default_factory=GoldenSpec)
+    holdout_lock: str | None = None  # ZaraBench golden lock; its families never enter train/validation
     scrub: ScrubSpec = Field(default_factory=ScrubSpec)
     split_seed: int = 42
     dedup_threshold: float = 0.92
