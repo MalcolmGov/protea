@@ -11,9 +11,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class ProteaSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    anthropic_api_key: str | None = None
+    # Cloud sandboxes reserve ANTHROPIC_API_KEY for the session's own account; the PROTEA_ prefix is the alias
+    # operators set there (docs/inference.md, docs/zarabench.md).
+    anthropic_api_key: str | None = Field(
+        default=None, validation_alias=AliasChoices("ANTHROPIC_API_KEY", "PROTEA_ANTHROPIC_API_KEY")
+    )
     anthropic_model: str = "claude-opus-5"
-    openai_api_key: str | None = None
+    openai_api_key: str | None = Field(
+        default=None, validation_alias=AliasChoices("OPENAI_API_KEY", "PROTEA_OPENAI_API_KEY")
+    )
     openai_base_url: str = "https://api.openai.com/v1"
     openai_model: str = "gpt-4o-mini"
     google_api_key: str | None = None

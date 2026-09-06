@@ -1,0 +1,34 @@
+# Release pipeline for the protea-agent family (kind: release). Every stage is a check with evidence on disk;
+# `protea release check` prints them, `protea release promote` moves the registry one step only when the
+# preceding stages pass, `protea release canary` raises the tenant share, `protea release rollback` reverts.
+name: zara-v0
+family: protea-agent
+evaluation_config: configs/evaluation/zarabench-0.1.yaml
+security_config: configs/evaluation/security-0.1.yaml
+reports_dir: evaluation/reports
+registry_dir: registry
+release_log: registry/release-log.jsonl
+
+gates:
+  require_model_card: true
+  require_dataset_verified: true
+  zarabench_release_gate: true      # ADR-007: ≥ base on priority categories, ≥ frontier on the gate categories
+  zarabench_not_partial: true
+  security_min_score: 0.95          # strict score on the security suite
+  security_min_family_pass: 0.9     # every probe family (injection, tenancy, secrets, pii, …)
+  compare_production: true          # never regress a priority category against the current production model
+  max_report_age_days: 30
+
+canary:
+  routing_policy: configs/routing/zara-v0.yaml
+  route: protea-agent
+  steps: [5, 25, 100]
+  observe_minutes: 60
+
+rollback:
+  validation_pass_rate_min: 0.90
+  fallback_rate_max: 0.10
+  error_rate_max: 0.02
+  latency_p95_ms_max: 8000
+  feedback_negative_share_max: 0.30
+  min_calls: 50

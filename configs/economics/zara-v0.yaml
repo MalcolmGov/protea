@@ -1,0 +1,27 @@
+# Economic model inputs (kind: economics). Forecast and prices are assumptions to be refreshed by finance each
+# month; `protea economics report` turns them into monthly cost on both paths, break-even and the kill signal.
+name: zara-v0
+forecast:                                  # per task type, per day, average tokens per request
+  - {task_type: agent_generation,   requests_per_day: 120,  input_tokens: 2500, output_tokens: 1200, protea_share: 1.0}
+  - {task_type: workflow_generation, requests_per_day: 80,   input_tokens: 1800, output_tokens: 800,  protea_share: 1.0}
+  - {task_type: tool_calling,        requests_per_day: 6000, input_tokens: 900,  output_tokens: 120,  protea_share: 1.0}
+  - {task_type: structured_output,   requests_per_day: 2500, input_tokens: 700,  output_tokens: 200,  protea_share: 1.0}
+  - {task_type: business_reasoning,  requests_per_day: 1500, input_tokens: 1200, output_tokens: 300,  protea_share: 0.0}
+frontier:                                  # what the same traffic costs on frontier models (USD per M tokens)
+  - {model: claude-sonnet-5, input_usd_per_m: 3.0,  output_usd_per_m: 15.0, share: 0.7}
+  - {model: claude-haiku-4-5, input_usd_per_m: 1.0, output_usd_per_m: 5.0,  share: 0.3}
+gpu:                                       # serving host; throughput is a vLLM assumption until measured by `serve loadtest`
+  name: l40s
+  provider: runpod
+  usd_per_hour: 0.86
+  count: 1
+  output_tokens_per_second: 900            # Qwen3-8B bf16, batched, sustained
+  target_utilisation: 0.6
+overheads:
+  training_usd_per_iteration: 25
+  training_iterations_per_month: 2
+  engineering_hours_per_month: 20
+  engineering_usd_per_hour: 60
+  operations_usd_per_month: 150
+  frontier_fallback_share: 0.1
+kill_breakeven_multiple: 3.0

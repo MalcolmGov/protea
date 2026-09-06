@@ -1,7 +1,7 @@
 # ZaraBench 0.1 — Zara's task suite inside the Protea evaluation framework (spec §22–§23).
 # Weights favour the v0 priorities (§64). min_score values are release gates per category.
 suite: zarabench
-version: 0.1.0
+version: 0.1.1                        # 0.1.1: allowed category/tier values in prompts, category-tolerant bindings, specific-only facts
 tasks_path: evaluation/zarabench/0.1/tasks.jsonl
 lock_path: evaluation/zarabench/0.1/golden.lock
 judge_provider: null                  # e.g. anthropic; set per run and never the model under test
@@ -13,7 +13,7 @@ frontier_gate_categories: [structured_output]
 kill_fraction_of_frontier: 0.8        # strategy-review A1
 concurrency: 4
 max_tool_rounds: 3
-max_tokens: 800
+max_tokens: 4000                      # agent specs run to ~2-3k output tokens; 800 truncated every one in the first baseline
 temperature: 0.0
 # USD per million tokens, used only for spend estimates (update from the providers' price pages before a paid run).
 prices:

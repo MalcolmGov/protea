@@ -109,3 +109,32 @@ def serve_vllm(
         _fail("vllm is not installed on this machine (pip install -e '.[vllm]' on the GPU host)")
     args = [a if not a.startswith("$") else os.environ.get(a[1:], "") for a in vllm_args(cfg, adapter_path=adapter)]
     os.execvp(args[0], args)  # replaces this process with the engine so signals reach it directly
+
+
+@serve_app.command("loadtest")
+def serve_loadtest(
+    url: str = typer.Option("http://127.0.0.1:8080", help="Facade base URL."),
+    token: str | None = typer.Option(None, help="Bearer token (default: PROTEA_FACADE_TOKEN)."),
+    concurrency: int = typer.Option(8),
+    requests: int = typer.Option(100),
+    max_tokens: int = typer.Option(64),
+    latency_budget_ms: int | None = typer.Option(None, help="Fail when p95 exceeds this."),
+    confirm: bool = typer.Option(
+        False, "--confirm", help="Required for a non-local URL (the backend may bill per token)."
+    ),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Load-test a running facade: concurrent /v1/generate calls, latency percentiles, throughput, error rate."""
+    from protea.config import get_settings
+    from protea.serving.loadtest import LoadOptions, run_load
+
+    local = any(h in url for h in ("127.0.0.1", "localhost", "[::1]"))
+    if not local and not confirm:
+        _fail(f"{url} is not local; pass --confirm to load a remote facade (its backend may spend tokens)")
+    opts = LoadOptions(
+        concurrency=concurrency, requests=requests, max_tokens=max_tokens, latency_budget_ms=latency_budget_ms
+    )
+    report = asyncio.run(run_load(url, token=token or get_settings().protea_facade_token, options=opts))
+    typer.echo(report.model_dump_json(indent=2) if as_json else report.summary())
+    if report.errors or report.within_budget is False:
+        raise typer.Exit(1)

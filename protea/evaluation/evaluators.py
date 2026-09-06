@@ -31,6 +31,7 @@ class TaskResult(BaseModel):
     family: str | None = None
     checks: list[Check] = Field(default_factory=list)
     judge_skipped: list[str] = Field(default_factory=list)  # judge checks that could not run
+    judge_error: str | None = None  # why the judge could not run (provider error); the checks above stay skipped
     error: str | None = None
     latency_ms: int = 0
     input_tokens: int = 0
@@ -65,10 +66,19 @@ def _phrase_in(phrase: str, text: str) -> bool:
     return _norm(phrase) in text
 
 
+def _unfence(text: str) -> str:
+    body = text.strip()
+    if body.startswith("```") and body.endswith("```"):
+        body = body[3:-3].strip()
+        if body.startswith("json"):
+            body = body[4:].strip()
+    return body
+
+
 def _parse_json(text: str, strict: bool) -> tuple[Any | None, str]:
-    if strict:
+    if strict:  # JSON only: nothing but the object, a single ```json fence around it tolerated (the gate strips it)
         try:
-            return json.loads(text.strip()), ""
+            return json.loads(_unfence(text)), ""
         except json.JSONDecodeError as exc:
             return None, f"not bare JSON: {exc.msg}"
     try:
@@ -208,10 +218,13 @@ def _binding_checks(e: Expect, obj: Any) -> list[Check]:
     for b in (obj.get("bindings") if isinstance(obj, dict) else None) or []:
         if isinstance(b, dict) and "tool" in b:
             actual[str(b["tool"])] = str(b.get("connector", ""))
-    return [
-        Check(name=f"binding:{tool}", ok=actual.get(tool) == conn, detail=f"expected {conn}, got {actual.get(tool)!r}")
-        for tool, conn in e.bindings.items()
-    ]
+    checks = []
+    for tool, conn in e.bindings.items():
+        accepted = [conn] if isinstance(conn, str) else list(conn)
+        got = actual.get(tool)
+        want = accepted[0] if len(accepted) == 1 else f"one of {accepted}"
+        checks.append(Check(name=f"binding:{tool}", ok=got in accepted, detail=f"expected {want}, got {got!r}"))
+    return checks
 
 
 def _dag_ok(nodes: dict[str, str], edges: list[tuple[str, str]]) -> bool:

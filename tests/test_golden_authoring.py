@@ -99,3 +99,19 @@ async def test_committed_zarabench_task_set_is_sealed_and_self_consistent():
     report = await run_benchmark(cfg.model_copy(update={"concurrency": 16}), tasks, ReferenceProvider(tasks))
     assert report.zarascore == 1.0
     assert all(r.passed for r in report.results), [r.task_id for r in report.results if not r.passed]
+
+
+def test_0_1_1_tightening_rules():
+    from protea.evaluation.authoring import _facts, acceptable_bindings
+
+    # facts: numbers and names are facts; generic words, phrases and weekdays are not
+    facts = _facts(
+        ["emergency", "follow up", "front desk", "Saturday", "R1,250", "Childline", "+27 60 555 8946", "person"]
+    )
+    assert facts == ["R1,250", "Childline", "+27 60 555 8946"]
+    # bindings: the catalogue's own binding, any same-category connector, and anything for the webhook fallback
+    catalogue = {"db.postgres": "database", "google.workspace": "communication", "it.zendesk": "it"}
+    acc = acceptable_bindings({"list_services": "webhook", "book": "google_calendar", "escalate": "slack"}, catalogue)
+    assert acc["list_services"] == ["db.postgres", "google.workspace", "it.zendesk", "webhook"]
+    assert acc["book"] == ["google.workspace", "google_calendar"]
+    assert acc["escalate"] == ["google.workspace", "slack"]

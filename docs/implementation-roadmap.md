@@ -118,7 +118,7 @@ Wire `/v1/copilot/*` (chat + speak) → Requirement Collector → Agent Compiler
 ### Phase 9 — Observability
 Request/model/validation/fallback/cost fields on `api_usage` and `audit_events`; feedback table (§36) linked to model version, agent, task, prompt template, tools; data APIs for the §38 dashboards; privacy-safe logging default.
 
-### Phase 10 — Production hardening
+### Phase 10 — Production hardening (implemented, ADR-011)
 Security tests (injection, unauthorized tool, cross-tenant), canary + rollback config, release pipeline (train → validate → ZaraBench → security eval → compare production → candidate → staging → canary → production), load test of the inference facade, operations docs, economic model report (§69).
 
 ## 6. Execution boundaries (stop-and-confirm points)

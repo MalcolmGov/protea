@@ -24,6 +24,13 @@ jobs:
       - run: protea evaluate verify
       - name: Reference answers must satisfy every evaluator
         run: protea evaluate run --provider reference --out /tmp/zarabench-reports --label ci
+      - name: Security probe suite is sealed, deterministic and satisfiable
+        run: |
+          protea security verify
+          protea security run --provider reference --out /tmp/security-reports --label ci
+          protea security gate /tmp/security-reports/security-0.1/reference-reference-ci.json
+      - name: Economic model renders from the committed inputs
+        run: protea economics report --json > /tmp/economics.json
   train-smoke:
     runs-on: ubuntu-latest
     steps:

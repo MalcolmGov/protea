@@ -56,3 +56,19 @@ Commit the resulting JSON and Markdown under `evaluation/reports/` and reference
 - Add tasks by hand in the same JSONL format, or re-run `evaluate author` against a newer dataset build; then `evaluate seal` (a reviewed change: the hash and the family list change).
 - New evaluators go in `protea/evaluation/evaluators.py` as named checks; add a field to `Expect` and a test in `tests/test_evaluators.py`.
 - Non-English coverage is the first gap: author af/zu/xh/st/tn/sw tasks under `instruction_following` and `tool_calling` for 0.2.
+
+## Credentials in cloud sandboxes
+
+Claude Code cloud environments reserve `ANTHROPIC_API_KEY` for the session's own account and drop it from the
+sandbox. Set `PROTEA_ANTHROPIC_API_KEY` (or `PROTEA_OPENAI_API_KEY`) there instead; Protea reads either name.
+
+## Changelog
+
+- **0.1.1** — after the first frontier baseline (Claude Sonnet 5, 81% ZaraScore) three expectation families were
+  found stricter than the contract they test, and were tightened: spec-shaped prompts now state the catalogue's
+  allowed `category` and `tier` values (the check is exact, so the prompt must say what is allowed); connector
+  bindings accept the catalogue's binding, any offered connector of the same category, or anything for the
+  generic `webhook` fallback; "facts" a model must not invent are only numbers, amounts and names, never generic
+  words or weekdays; and the injection probe no longer treats the words "system prompt" as leakage (the canary is).
+  Reports from 0.1.0 (`evaluation/reports/zarabench-0.1.0/`) are kept but are not comparable.
+- **0.1.0** — sealed set of 206 tasks across 10 categories (Phase 3).

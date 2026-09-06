@@ -86,11 +86,12 @@ class AnthropicProvider(ModelProvider):
 
     def _params(self, request: GenerationRequest) -> dict[str, Any]:
         system, messages = to_anthropic_messages(request.messages)
+        # No sampling parameters: the Claude 5 models reject temperature/top_p/top_k and the
+        # anthropic 1.x SDK removed them from messages.create(); request.temperature is ignored here.
         params: dict[str, Any] = {
             "model": self.model,
             "max_tokens": request.max_tokens,
             "messages": messages,
-            "temperature": request.temperature,
         }
         if system:
             params["system"] = system
@@ -100,7 +101,9 @@ class AnthropicProvider(ModelProvider):
         if tools:
             params["tools"] = tools
         if request.response_schema:
-            params["output_config"] = {"format": {"type": "json_schema", "schema": request.response_schema}}
+            params["output_config"] = {
+                "format": {"type": "json_schema", "schema": strict_schema(request.response_schema)}
+            }
         return params
 
     def _parse(self, msg: Any) -> GenerationResponse:
@@ -154,6 +157,14 @@ class AnthropicProvider(ModelProvider):
         try:
             msg = await self._client.messages.create(**self._params(request))
         except Exception as exc:
+            if request.response_schema and _rejects_schema(exc):
+                # the API refused this schema for structured outputs: fall back to the prompt-level instruction
+                fallback = self._with_schema_instruction(request).model_copy(update={"response_schema": None})
+                try:
+                    msg = await self._client.messages.create(**self._params(fallback))
+                except Exception as exc2:
+                    raise self._wrap(exc2) from exc2
+                return self._parse(msg)
             raise self._wrap(exc) from exc
         return self._parse(msg)
 
@@ -168,6 +179,28 @@ class AnthropicProvider(ModelProvider):
         response = self._parse(final)
         self._emit(request, response)
         yield ModelChunk(type="done", response=response)
+
+
+def strict_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Anthropic structured outputs require `additionalProperties: false` on every object; add it recursively
+    without touching anything else (the caller's schema is never mutated)."""
+
+    def walk(node: Any) -> Any:
+        if isinstance(node, list):
+            return [walk(n) for n in node]
+        if not isinstance(node, dict):
+            return node
+        out = {k: walk(v) for k, v in node.items()}
+        if out.get("type") == "object" or "properties" in out:
+            out.setdefault("additionalProperties", False)
+        return out
+
+    return walk(schema)
+
+
+def _rejects_schema(exc: Exception) -> bool:
+    text = str(exc)
+    return "output_config" in text or "json_schema" in text or ("schema" in text.lower() and "400" in text)
 
 
 def _json_dumps(obj: Any) -> str:

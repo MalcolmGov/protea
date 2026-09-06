@@ -55,7 +55,7 @@ def test_evaluate_run_reference_and_compare(tmp_path: Path):
         ],
     )
     assert mock.exit_code == 0, mock.output
-    reports = sorted(p.name for p in (out / "zarabench-0.1.0").iterdir())
+    reports = sorted(p.name for p in (out / "zarabench-0.1.1").iterdir())
     assert reports == [
         "mock-mock-1-mock.json",
         "mock-mock-1-mock.md",
@@ -68,9 +68,9 @@ def test_evaluate_run_reference_and_compare(tmp_path: Path):
         [
             "evaluate",
             "compare",
-            str(out / "zarabench-0.1.0/mock-mock-1-mock.json"),
+            str(out / "zarabench-0.1.1/mock-mock-1-mock.json"),
             "--frontier",
-            str(out / "zarabench-0.1.0/reference-reference-ref.json"),
+            str(out / "zarabench-0.1.1/reference-reference-ref.json"),
             "--json",
         ],
     )
