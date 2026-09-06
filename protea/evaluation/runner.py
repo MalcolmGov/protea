@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import statistics
 from collections import Counter
+from collections.abc import Callable
 from datetime import UTC, datetime
+from time import monotonic
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -136,6 +138,23 @@ def summarise(cfg: EvaluationConfig, report: BenchmarkReport, results: list[Task
     return report
 
 
+ProgressFn = Callable[[int, int, TaskResult], None]
+
+
+def progress_line(done: int, total: int, result: TaskResult, *, started: float, now: float | None = None) -> str:
+    """One-line progress summary: ``[ 12/206] 0:04:10 eta 1:07:20  task-id  0.75 (or ERR)``."""
+    elapsed = max(0.0, (monotonic() if now is None else now) - started)
+    eta = (elapsed / done) * (total - done) if done else 0.0
+    verdict = "ERR" if result.error else f"{result.score:.2f}"
+    width = len(str(total))
+    return f"[{done:>{width}}/{total}] {_hms(elapsed)} eta {_hms(eta)}  {result.task_id}  {verdict}"
+
+
+def _hms(seconds: float) -> str:
+    s = int(seconds)
+    return f"{s // 3600}:{(s % 3600) // 60:02d}:{s % 60:02d}"
+
+
 async def run_task(
     cfg: EvaluationConfig, task: EvalTask, provider: ModelProvider, judge: ModelProvider | None
 ) -> TaskResult:
@@ -169,12 +188,24 @@ async def run_benchmark(
     run_id: str | None = None,
     config_hash: str = "",
     task_set_hash: str = "",
+    on_result: ProgressFn | None = None,
 ) -> BenchmarkReport:
+    """Run every task through the provider (``cfg.concurrency`` at a time) and summarise.
+
+    ``on_result`` is called after each task completes with the running count, the total and the
+    result, so long runs can show progress; it runs on the event loop and must not block.
+    """
     sem = asyncio.Semaphore(cfg.concurrency)
+    done = 0
 
     async def one(task: EvalTask) -> TaskResult:
+        nonlocal done
         async with sem:
-            return await run_task(cfg, task, provider, judge)
+            result = await run_task(cfg, task, provider, judge)
+        done += 1
+        if on_result is not None:
+            on_result(done, len(tasks), result)
+        return result
 
     results = list(await asyncio.gather(*(one(t) for t in tasks)))
     now = datetime.now(UTC)

@@ -68,9 +68,10 @@ def security_run(
     out: Path = typer.Option(Path("evaluation/reports")),
     confirm: bool = typer.Option(False, "--confirm", help="Required for providers that spend tokens."),
     label: str | None = typer.Option(None),
+    quiet: bool = typer.Option(False, "--quiet", help="Suppress the per-probe progress lines on stderr."),
 ) -> None:
     """Run the probes against a provider and write the report (same format as ZaraBench)."""
-    from protea.cli_evaluate import _build, _load, _paid_gate
+    from protea.cli_evaluate import _build, _load, _paid_gate, progress_printer
     from protea.evaluation.report import write_report
     from protea.evaluation.runner import run_benchmark
 
@@ -78,7 +79,16 @@ def security_run(
     _paid_gate(cfg, tasks, provider, model, None, confirm)
     prov = _build(provider, model, tasks)
     report = asyncio.run(
-        run_benchmark(cfg, tasks, prov, judge=None, run_id=label, config_hash=cfg_hash, task_set_hash=digest)
+        run_benchmark(
+            cfg,
+            tasks,
+            prov,
+            judge=None,
+            run_id=label,
+            config_hash=cfg_hash,
+            task_set_hash=digest,
+            on_result=progress_printer(quiet),
+        )
     )
     json_path, _ = write_report(report, out, cfg)
     typer.echo(f"security strict {report.zarascore_strict:.3f}  tasks {report.tasks_run}  report {json_path}")

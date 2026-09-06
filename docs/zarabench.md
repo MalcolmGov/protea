@@ -57,6 +57,18 @@ Commit the resulting JSON and Markdown under `evaluation/reports/` and reference
 - New evaluators go in `protea/evaluation/evaluators.py` as named checks; add a field to `Expect` and a test in `tests/test_evaluators.py`.
 - Non-English coverage is the first gap: author af/zu/xh/st/tn/sw tasks under `instruction_following` and `tool_calling` for 0.2.
 
+## Progress on long runs
+
+`protea evaluate run` and `protea security run` print one line per finished task to stderr:
+
+```
+[ 12/206] 0:04:10 eta 1:07:20  agent-gen-en-0007  0.75
+```
+
+The columns are the running count, elapsed time, a linear ETA from the average time per task so far, the
+task id and the deterministic score (`ERR` when the provider failed). Pass `--quiet` to suppress the lines;
+the JSON and Markdown reports are unchanged.
+
 ## Credentials in cloud sandboxes
 
 Claude Code cloud environments reserve `ANTHROPIC_API_KEY` for the session's own account and drop it from the

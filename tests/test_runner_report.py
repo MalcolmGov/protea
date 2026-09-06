@@ -179,3 +179,30 @@ def test_report_paths_keep_dotted_model_ids(tmp_path):
     json_path, md_path = report_paths(rep, tmp_path)
     assert json_path.name == "local-Qwen-Qwen2.5-0.5B-Instruct-r.json"
     assert md_path.name == "local-Qwen-Qwen2.5-0.5B-Instruct-r.md"
+
+
+@pytest.mark.asyncio
+async def test_run_benchmark_reports_progress_per_task() -> None:
+    tasks = _tasks()
+    seen: list[tuple[int, int, str]] = []
+    await run_benchmark(
+        _cfg(),
+        tasks,
+        ReferenceProvider(tasks),
+        run_id="p1",
+        on_result=lambda done, total, r: seen.append((done, total, r.task_id)),
+    )
+    assert [d for d, _, _ in seen] == list(range(1, len(tasks) + 1))
+    assert {t for _, t, _ in seen} == {len(tasks)}
+    assert sorted(i for _, _, i in seen) == sorted(t.id for t in tasks)
+
+
+def test_progress_line_formats_count_eta_and_verdict() -> None:
+    from protea.evaluation.evaluators import Check, TaskResult
+    from protea.evaluation.runner import progress_line
+
+    ok = TaskResult(task_id="t-1", category="workflow", language="en", checks=[Check(name="a", ok=True)])
+    line = progress_line(2, 10, ok, started=0.0, now=20.0)
+    assert line == "[ 2/10] 0:00:20 eta 0:01:20  t-1  1.00"
+    err = TaskResult(task_id="t-2", category="workflow", language="en", error="boom")
+    assert progress_line(10, 10, err, started=0.0, now=3600.0).endswith("t-2  ERR")

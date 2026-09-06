@@ -168,6 +168,22 @@ def _paid_gate(cfg, tasks, provider: str, model: str | None, judge_provider: str
         _fail("re-run with --confirm to proceed")
 
 
+def progress_printer(quiet: bool = False):
+    """Build an ``on_result`` callback that prints one progress line per finished task to stderr."""
+    from time import monotonic
+
+    from protea.evaluation.runner import progress_line
+
+    if quiet:
+        return None
+    started = monotonic()
+
+    def _print(done: int, total: int, result) -> None:
+        typer.echo(progress_line(done, total, result, started=started), err=True)
+
+    return _print
+
+
 def _print_summary(report, json_path: Path, md_path: Path) -> None:
     typer.echo(
         f"ZaraScore {report.zarascore:.4f} (strict {report.zarascore_strict:.4f})"
@@ -197,6 +213,7 @@ def evaluate_run(
     confirm: bool = typer.Option(False, "--confirm", help="Required for any provider that spends tokens."),
     label: str | None = typer.Option(None, help="Run id; defaults to a UTC timestamp."),
     max_tokens: int | None = typer.Option(None, help="Override the config's max_tokens (recorded in the config hash)."),
+    quiet: bool = typer.Option(False, "--quiet", help="Suppress the per-task progress lines on stderr."),
 ) -> None:
     """Run the suite against a provider and write JSON + Markdown reports. Paid providers need --confirm."""
     from protea.config import config_hash
@@ -220,7 +237,16 @@ def evaluate_run(
         if problems:
             _fail("; ".join(problems))
     report = asyncio.run(
-        run_benchmark(cfg, tasks, prov, judge=judge, run_id=label, config_hash=cfg_hash, task_set_hash=digest)
+        run_benchmark(
+            cfg,
+            tasks,
+            prov,
+            judge=judge,
+            run_id=label,
+            config_hash=cfg_hash,
+            task_set_hash=digest,
+            on_result=progress_printer(quiet),
+        )
     )
     json_path, md_path = write_report(report, out, cfg)
     _print_summary(report, json_path, md_path)
