@@ -1,0 +1,63 @@
+import json
+
+import pytest
+
+from protea.providers.local_hf import LocalHFProvider, parse_tool_calls, to_chat_messages, to_chat_tools
+from protea.schemas.generation import GenerationRequest, Message, ToolCall, ToolSchema
+
+
+def test_parse_tool_calls_and_content():
+    text = 'Let me check.\n<tool_call>\n{"name": "lookup_order", "arguments": {"order_id": "4821"}}\n</tool_call>'
+    content, calls = parse_tool_calls(text)
+    assert content == "Let me check."
+    assert [c.name for c in calls] == ["lookup_order"]
+    assert calls[0].arguments == {"order_id": "4821"}
+    assert calls[0].id == "call_1"
+    content, calls = parse_tool_calls("<tool_call>not json</tool_call> plain answer")
+    assert calls == []
+    assert content == "plain answer"
+
+
+def test_chat_shape_carries_tool_calls_and_results():
+    req = GenerationRequest(
+        messages=[
+            Message(role="system", content="Be brief."),
+            Message(role="user", content="order 4821?"),
+            Message(
+                role="assistant", tool_calls=[ToolCall(id="c1", name="lookup_order", arguments={"order_id": "4821"})]
+            ),
+            Message(role="tool", name="lookup_order", tool_call_id="c1", content='{"status": "shipped"}'),
+        ],
+        tools=[ToolSchema(name="lookup_order", description="Look up", parameters={"type": "object", "properties": {}})],
+    )
+    msgs = to_chat_messages(req)
+    assert msgs[2]["tool_calls"][0]["function"]["name"] == "lookup_order"
+    assert msgs[3] == {"role": "tool", "name": "lookup_order", "content": '{"status": "shipped"}'}
+    assert to_chat_tools(req)[0]["function"]["parameters"] == {"type": "object", "properties": {}}
+    assert to_chat_tools(GenerationRequest(messages=[Message(role="user", content="hi")])) is None
+
+
+async def test_generate_with_a_tiny_random_model(tmp_path):
+    pytest.importorskip("torch")
+    from protea.training.trainer import build_tiny_random
+
+    records = [{"messages": [{"role": "user", "content": "hello there"}, {"role": "assistant", "content": "hi"}]}] * 4
+    model, tok = build_tiny_random(records)
+    model.save_pretrained(tmp_path / "tiny")
+    tok.save_pretrained(tmp_path / "tiny")
+    provider = LocalHFProvider(str(tmp_path / "tiny"), threads=1)
+    health = await provider.health()
+    assert health.ok
+    resp = await provider.generate(
+        GenerationRequest(messages=[Message(role="user", content="hello there")], max_tokens=6, temperature=0.0)
+    )
+    assert resp.provider == "local"
+    assert resp.usage.input_tokens > 0
+    assert 0 < resp.usage.output_tokens <= 6
+    assert resp.finish_reason in ("stop", "length")
+    schema = {"type": "object", "properties": {"ok": {"type": "boolean"}}}
+    resp = await provider.generate(
+        GenerationRequest(messages=[Message(role="user", content="say ok")], max_tokens=4, response_schema=schema)
+    )
+    assert resp.usage.output_tokens <= 4
+    assert json.dumps(schema) not in (resp.content or "")  # the instruction is in the prompt, not echoed by contract

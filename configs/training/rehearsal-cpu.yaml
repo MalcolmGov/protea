@@ -1,0 +1,35 @@
+# CPU dress rehearsal (no GPU, no spend): a small open model, LoRA on a slice of the real dataset, long enough
+# to produce a genuinely different adapter, short enough to finish in about an hour on 4 cores.
+model:
+  base_model: Qwen/Qwen2.5-0.5B-Instruct
+  trust_remote_code: false
+  load_in_4bit: false
+training:
+  method: lora
+  epochs: 1
+  max_steps: 150
+  learning_rate: 2.0e-4
+  max_sequence_length: 1024
+  per_device_batch_size: 1
+  gradient_accumulation_steps: 2
+  gradient_checkpointing: false
+  bf16: false
+  seed: 42
+  save_steps: 50
+  eval_steps: 50
+lora:
+  rank: 16
+  alpha: 32
+  dropout: 0.05
+dataset:
+  train: protea_data/agent-training/0.1.0/train.jsonl
+  validation: protea_data/agent-training/0.1.0/validation.jsonl
+  dataset_key: agent-training-0.1.0
+  max_examples: 400
+output:
+  dir: checkpoints/rehearsal-cpu
+  experiment_name: rehearsal-cpu
+  model_family: protea-agent
+budget:
+  max_runtime_minutes: 180
+  max_cost_usd: 0

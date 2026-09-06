@@ -64,3 +64,19 @@ Shutdown: `docker stop` (60 s grace) or a Kubernetes preStop; both processes dra
 ## Not in this phase
 
 The Zara-specific routes (`/v1/agent/generate|repair|optimize`, `/v1/workflow/generate`, `/v1/tools/select`) wrap the Agent Compiler and are built in aria in Phase 6 on top of `/v1/generate/structured`.
+
+## Local provider (CPU rehearsals, offline development)
+
+`protea providers list` shows a `local` provider: a Hugging Face base model plus an optional LoRA adapter run
+in-process with `transformers` (`PROTEA_LOCAL_MODEL`, `PROTEA_LOCAL_ADAPTER`, or `--model` / `adapter=` overrides).
+It speaks the same contract as every other provider — tool calls via the chat template's `<tool_call>` blocks,
+structured output through the prompt-level schema instruction and the caller's validation gate — so ZaraBench,
+the security suite and the facade run against a freshly trained adapter without a GPU:
+
+```bash
+PROTEA_LOCAL_ADAPTER=checkpoints/rehearsal-cpu/rehearsal-cpu/rehearsal-1/adapter \
+  protea evaluate run --provider local --label rehearsal
+protea serve facade --backend local --check
+```
+
+It is a rehearsal and development path, not a serving path: production inference is vLLM (ADR-009).
