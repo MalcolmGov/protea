@@ -23,7 +23,8 @@ def test_committed_model_is_honest_about_low_volume():
     assert 1.0 < report.breakeven_multiple_of_forecast < 3.0
     assert report.kill_signal is False
     md = render_markdown(report)
-    assert "Break-even volume" in md and "Verdict" in md
+    assert "Break-even volume" in md
+    assert "Verdict" in md
 
 
 def test_volume_flips_the_verdict_and_kill_signal():
@@ -47,5 +48,7 @@ def test_volume_flips_the_verdict_and_kill_signal():
 
 
 def test_frontier_shares_must_sum_to_one():
+    half = load_config(REPO / "configs/economics/zara-v0.yaml", "economics").model_dump()
+    half["frontier"] = [{"model": "a", "input_usd_per_m": 1, "output_usd_per_m": 2, "share": 0.5}]
     with pytest.raises(ValueError, match="shares must sum"):
-        _cfg(frontier=[{"model": "a", "input_usd_per_m": 1, "output_usd_per_m": 2, "share": 0.5}])
+        EconomicsConfig.model_validate(half)

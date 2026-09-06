@@ -36,7 +36,7 @@ def _report(
     return write_report(rep, root / "evaluation/reports", cfg)[0]
 
 
-@pytest.fixture()
+@pytest.fixture
 def root(tmp_path):
     shutil.copytree(REPO / "configs", tmp_path / "configs")
     (tmp_path / "evaluation").mkdir()
@@ -83,15 +83,19 @@ def test_check_blocks_without_evidence_and_explains(root):
     ModelRegistry(root / "registry/models.json").add(_entry(checkpoint_uri=None, model_card_path=None))
     report = _pipeline(root).check("protea-agent-0.1.0")
     stages = {c.stage: c for c in report.checks}
-    assert not stages["train"].ok and "checkpoint_uri" in stages["train"].detail
-    assert not stages["validate"].ok and "model card" in stages["validate"].detail
-    assert not stages["zarabench"].ok and "no ZaraBench report" in stages["zarabench"].detail
+    assert not stages["train"].ok
+    assert "checkpoint_uri" in stages["train"].detail
+    assert not stages["validate"].ok
+    assert "model card" in stages["validate"].detail
+    assert not stages["zarabench"].ok
+    assert "no ZaraBench report" in stages["zarabench"].detail
     assert not stages["security"].ok
     assert stages["compare_production"].ok
     assert report.next_step is None
     assert len(report.blockers) == 4
+    pipe = _pipeline(root)
     with pytest.raises(RegistryError, match="evidence supports nothing"):
-        _pipeline(root).promote("protea-agent-0.1.0", "candidate")
+        pipe.promote("protea-agent-0.1.0", "candidate")
 
 
 def test_partial_or_weak_reports_block_promotion(root):
@@ -197,7 +201,8 @@ def test_full_promotion_canary_and_rollback(root):
     weak = pipe.check("protea-agent-0.2.0")
     stages = {c.stage: c for c in weak.checks}
     assert not stages["zarabench"].ok  # below the frontier gate category
-    assert not stages["compare_production"].ok and "regresses production" in stages["compare_production"].detail
+    assert not stages["compare_production"].ok
+    assert "regresses production" in stages["compare_production"].detail
     # rollback: canary to zero, production demoted; nothing to reinstate yet
     out = pipe.rollback(reason="p95 breach")
     assert out == {"canary_percent": 0.0, "demoted": "protea-agent-0.1.0", "reinstated": None}

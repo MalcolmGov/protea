@@ -94,64 +94,95 @@ def _blended(frontier: list[FrontierPrice]) -> tuple[float, float]:
     )
 
 
-def evaluate(cfg: EconomicsConfig) -> EconomicsReport:
-    days = HOURS_PER_MONTH / 24
-    req_month = sum(f.requests_per_day for f in cfg.forecast) * days
-    protea_req = sum(f.requests_per_day * f.protea_share for f in cfg.forecast) * days
-    in_tokens = sum(f.requests_per_day * f.input_tokens for f in cfg.forecast) * days
-    out_tokens = sum(f.requests_per_day * f.output_tokens for f in cfg.forecast) * days
-    protea_in = sum(f.requests_per_day * f.protea_share * f.input_tokens for f in cfg.forecast) * days
-    protea_out = sum(f.requests_per_day * f.protea_share * f.output_tokens for f in cfg.forecast) * days
-    p_in, p_out = _blended(cfg.frontier)
-    frontier_cost = (in_tokens * p_in + out_tokens * p_out) / 1e6
+class _Volumes(BaseModel):
+    requests: float
+    protea_requests: float
+    input_tokens: float
+    output_tokens: float
+    protea_input: float
+    protea_output: float
 
+
+def _volumes(cfg: EconomicsConfig) -> _Volumes:
+    days = HOURS_PER_MONTH / 24
+    f = cfg.forecast
+    return _Volumes(
+        requests=sum(x.requests_per_day for x in f) * days,
+        protea_requests=sum(x.requests_per_day * x.protea_share for x in f) * days,
+        input_tokens=sum(x.requests_per_day * x.input_tokens for x in f) * days,
+        output_tokens=sum(x.requests_per_day * x.output_tokens for x in f) * days,
+        protea_input=sum(x.requests_per_day * x.protea_share * x.input_tokens for x in f) * days,
+        protea_output=sum(x.requests_per_day * x.protea_share * x.output_tokens for x in f) * days,
+    )
+
+
+def _fixed_cost(cfg: EconomicsConfig) -> float:
     ov = cfg.overheads
     gpu_month = cfg.gpu.usd_per_hour * cfg.gpu.count * HOURS_PER_MONTH
-    fixed = gpu_month + ov.training_usd_per_iteration * ov.training_iterations_per_month
-    fixed += ov.engineering_hours_per_month * ov.engineering_usd_per_hour + ov.operations_usd_per_month
+    training = ov.training_usd_per_iteration * ov.training_iterations_per_month
+    return (
+        gpu_month
+        + training
+        + ov.engineering_hours_per_month * ov.engineering_usd_per_hour
+        + ov.operations_usd_per_month
+    )
+
+
+def _verdict(
+    kill: bool, savings: float, frontier_cost: float, utilisation: float, breakeven_req: float, multiple: float | None
+) -> str:
+    if kill:
+        if multiple is None:
+            return "KILL SIGNAL: no Protea traffic forecast; stay on frontier models behind the router"
+        return (
+            f"KILL SIGNAL: break-even needs {breakeven_req:,.0f} Protea requests/month ({multiple:.1f}× the forecast); "
+            "stay on frontier models behind the router and revisit when volume grows"
+        )
+    if savings > 0:
+        return f"self-hosting saves {savings:,.0f} USD/month ({savings / frontier_cost:.0%}) at {utilisation:.0%} GPU utilisation"
+    return (
+        f"self-hosting costs {-savings:,.0f} USD/month more at forecast; "
+        f"break-even at {breakeven_req:,.0f} requests/month ({multiple:.1f}× forecast)"
+    )
+
+
+def evaluate(cfg: EconomicsConfig) -> EconomicsReport:
+    v = _volumes(cfg)
+    p_in, p_out = _blended(cfg.frontier)
+    frontier_cost = (v.input_tokens * p_in + v.output_tokens * p_out) / 1e6
+    ov = cfg.overheads
+    fixed = _fixed_cost(cfg)
     # traffic that leaves Protea again (fallback) is paid at frontier rates; the rest of the non-Protea share too
-    non_protea_cost = ((in_tokens - protea_in) * p_in + (out_tokens - protea_out) * p_out) / 1e6
-    fallback_cost = ov.frontier_fallback_share * (protea_in * p_in + protea_out * p_out) / 1e6
+    non_protea_cost = ((v.input_tokens - v.protea_input) * p_in + (v.output_tokens - v.protea_output) * p_out) / 1e6
+    fallback_cost = ov.frontier_fallback_share * (v.protea_input * p_in + v.protea_output * p_out) / 1e6
     variable = non_protea_cost + fallback_cost
     protea_cost = fixed + variable
 
-    per_gpu_month_tokens = cfg.gpu.output_tokens_per_second * 3600 * HOURS_PER_MONTH
-    capacity_tokens = per_gpu_month_tokens * cfg.gpu.count
-    gpu_hours = protea_out / (cfg.gpu.output_tokens_per_second * 3600) if cfg.gpu.output_tokens_per_second else 0.0
-    utilisation = protea_out / capacity_tokens if capacity_tokens else 0.0
-    avg_out = protea_out / protea_req if protea_req else 1.0
-    capacity_requests = capacity_tokens * cfg.gpu.target_utilisation / avg_out if avg_out else 0.0
+    capacity_tokens = cfg.gpu.output_tokens_per_second * 3600 * HOURS_PER_MONTH * cfg.gpu.count
+    gpu_hours = v.protea_output / (cfg.gpu.output_tokens_per_second * 3600)
+    utilisation = v.protea_output / capacity_tokens
+    avg_out = v.protea_output / v.protea_requests if v.protea_requests else 1.0
+    avg_in = v.protea_input / v.protea_requests if v.protea_requests else 1.0
+    capacity_requests = capacity_tokens * cfg.gpu.target_utilisation / avg_out
 
     # break-even: fixed cost equals the frontier spend Protea displaces (net of fallback) at volume V
-    avg_in = protea_in / protea_req if protea_req else 1.0
     displaced_per_request = (avg_in * p_in + avg_out * p_out) / 1e6 * (1.0 - ov.frontier_fallback_share)
     breakeven_req = fixed / displaced_per_request if displaced_per_request > 0 else float("inf")
-    breakeven_util = (breakeven_req * avg_out) / capacity_tokens if capacity_tokens else float("inf")
-    multiple = breakeven_req / protea_req if protea_req else None
+    breakeven_util = (breakeven_req * avg_out) / capacity_tokens
+    multiple = breakeven_req / v.protea_requests if v.protea_requests else None
     savings = frontier_cost - protea_cost
-    kill = (
-        multiple is None or multiple > cfg.kill_breakeven_multiple or breakeven_util > 1.0 * cfg.kill_breakeven_multiple
-    )
-
-    if kill:
-        verdict = (
-            f"KILL SIGNAL: break-even needs {breakeven_req:,.0f} Protea requests/month ({multiple:.1f}× the forecast)"
-            if multiple is not None
-            else "KILL SIGNAL: no Protea traffic forecast"
-        ) + "; stay on frontier models behind the router and revisit when volume grows"
-    elif savings > 0:
-        verdict = f"self-hosting saves {savings:,.0f} USD/month ({savings / frontier_cost:.0%}) at {utilisation:.0%} GPU utilisation"
-    else:
-        verdict = (
-            f"self-hosting costs {-savings:,.0f} USD/month more at forecast; "
-            f"break-even at {breakeven_req:,.0f} requests/month ({multiple:.1f}× forecast)"
-        )
+    kill = multiple is None or multiple > cfg.kill_breakeven_multiple or breakeven_util > cfg.kill_breakeven_multiple
+    finite = breakeven_req != float("inf")
 
     return EconomicsReport(
         name=cfg.name,
-        requests_per_month=round(req_month),
-        protea_requests_per_month=round(protea_req),
-        tokens_per_month={"input": round(in_tokens), "output": round(out_tokens), "protea_output": round(protea_out)},
+        requests_per_month=round(v.requests),
+        protea_requests_per_month=round(v.protea_requests),
+        tokens_per_month={
+            "input": round(v.input_tokens),
+            "output": round(v.output_tokens),
+            "protea_output": round(v.protea_output),
+        },
         frontier_cost_usd=round(frontier_cost, 2),
         protea_fixed_usd=round(fixed, 2),
         protea_variable_usd=round(variable, 2),
@@ -161,11 +192,11 @@ def evaluate(cfg: EconomicsConfig) -> EconomicsReport:
         gpu_hours_needed=round(gpu_hours, 1),
         gpu_utilisation=round(utilisation, 4),
         capacity_requests_per_month=round(capacity_requests),
-        breakeven_requests_per_month=round(breakeven_req) if breakeven_req != float("inf") else -1,
-        breakeven_utilisation=round(breakeven_util, 4) if breakeven_util != float("inf") else -1,
+        breakeven_requests_per_month=round(breakeven_req) if finite else -1,
+        breakeven_utilisation=round(breakeven_util, 4) if finite else -1,
         breakeven_multiple_of_forecast=round(multiple, 3) if multiple is not None else None,
         kill_signal=kill,
-        verdict=verdict,
+        verdict=_verdict(kill, savings, frontier_cost, utilisation, breakeven_req, multiple),
         assumptions=[
             f"blended frontier price {p_in:.2f}/{p_out:.2f} USD per M input/output tokens",
             f"{cfg.gpu.count}× {cfg.gpu.name} at {cfg.gpu.usd_per_hour:.2f} USD/h ({cfg.gpu.provider}), "
