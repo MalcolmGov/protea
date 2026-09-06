@@ -34,13 +34,15 @@ def _training(**over) -> dict:
 
 
 def test_qlora_requires_4bit():
+    data = _training(**{"model.load_in_4bit": False})
     with pytest.raises(ValueError, match="load_in_4bit"):
-        TrainingConfig.model_validate(_training(**{"model.load_in_4bit": False}))
+        TrainingConfig.model_validate(data)
 
 
 def test_golden_never_trains():
+    data = _training(**{"dataset.validation": "protea_data/x/golden.jsonl"})
     with pytest.raises(ValueError, match="golden"):
-        TrainingConfig.model_validate(_training(**{"dataset.validation": "protea_data/x/golden.jsonl"}))
+        TrainingConfig.model_validate(data)
 
 
 def test_train_and_validation_must_differ():

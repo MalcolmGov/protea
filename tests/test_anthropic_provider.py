@@ -42,10 +42,13 @@ async def test_tool_use_block_and_params():
         tools=[ToolSchema(name="get_order_status", description="d", parameters={"type": "object"}, strict=True)],
     )
     resp = await p.generate(req)
-    assert resp.finish_reason == "tool_calls" and resp.tool_calls[0].id == "toolu_1"
+    assert resp.finish_reason == "tool_calls"
+    assert resp.tool_calls[0].id == "toolu_1"
     params = client.messages.calls[0]
-    assert params["system"] == "Be brief." and params["messages"][0]["role"] == "user"
-    assert params["tools"][0]["input_schema"] == {"type": "object"} and params["tools"][0]["strict"] is True
+    assert params["system"] == "Be brief."
+    assert params["messages"][0]["role"] == "user"
+    assert params["tools"][0]["input_schema"] == {"type": "object"}
+    assert params["tools"][0]["strict"] is True
 
 
 async def test_structured_uses_output_config():
@@ -59,20 +62,23 @@ async def test_structured_uses_output_config():
     out = await p.generate_structured(GenerationRequest(messages=[Message(role="user", content="x")]), Out)
     assert out.ok is True
     fmt = client.messages.calls[0]["output_config"]["format"]
-    assert fmt["type"] == "json_schema" and fmt["schema"]["title"] == "Out"
+    assert fmt["type"] == "json_schema"
+    assert fmt["schema"]["title"] == "Out"
 
 
 async def test_error_mapping():
     req_obj = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    request = GenerationRequest(messages=[Message(role="user", content="x")])
     rate = anthropic.RateLimitError("slow", response=httpx.Response(429, request=req_obj), body=None)
     p = AnthropicProvider(model="claude-opus-5", api_key=None, client=_client(error=rate))
     with pytest.raises(ProviderError) as exc:
-        await p.generate(GenerationRequest(messages=[Message(role="user", content="x")]))
-    assert exc.value.retryable and exc.value.status == 429
+        await p.generate(request)
+    assert exc.value.retryable
+    assert exc.value.status == 429
     bad = anthropic.BadRequestError("bad", response=httpx.Response(400, request=req_obj), body=None)
     p2 = AnthropicProvider(model="claude-opus-5", api_key=None, client=_client(error=bad))
     with pytest.raises(ProviderError) as exc2:
-        await p2.generate(GenerationRequest(messages=[Message(role="user", content="x")]))
+        await p2.generate(request)
     assert not exc2.value.retryable
 
 
@@ -89,7 +95,8 @@ def test_parallel_tool_results_share_one_user_message():
     system, out = to_anthropic_messages(msgs)
     assert system is None
     assert [b["type"] for b in out[1]["content"]] == ["tool_use", "tool_use"]
-    assert len(out) == 3 and [b["tool_use_id"] for b in out[2]["content"]] == ["a", "b"]
+    assert len(out) == 3
+    assert [b["tool_use_id"] for b in out[2]["content"]] == ["a", "b"]
 
 
 def test_not_configured():

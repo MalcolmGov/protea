@@ -42,8 +42,10 @@ async def test_function_call_and_schema_payload():
         response_schema={"type": "object", "title": "X", "properties": {"a": {"type": "string"}}},
     )
     resp = await p.generate(req)
-    assert resp.finish_reason == "tool_calls" and resp.tool_calls[0].arguments == {"order_id": "4821"}
-    assert seen["url"].endswith("/models/gemini-2.5-flash:generateContent") and seen["key"] == "k"
+    assert resp.finish_reason == "tool_calls"
+    assert resp.tool_calls[0].arguments == {"order_id": "4821"}
+    assert seen["url"].endswith("/models/gemini-2.5-flash:generateContent")
+    assert seen["key"] == "k"
     body = seen["body"]
     assert body["systemInstruction"]["parts"][0]["text"] == "s"
     assert "additionalProperties" not in json.dumps(body["tools"])

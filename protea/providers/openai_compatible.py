@@ -72,6 +72,70 @@ def parse_tool_calls(raw: list[dict[str, Any]] | None) -> list[ToolCall]:
     return calls
 
 
+_DONE: dict[str, Any] = {}
+
+
+def _finish_reason(reason: str | None) -> str:
+    return {"stop": "stop", "tool_calls": "tool_calls", "length": "length", "content_filter": "refusal"}.get(
+        reason or "", "other"
+    )
+
+
+def _parse_sse_line(line: str) -> dict[str, Any] | None:
+    """Return the JSON event for a `data:` line, the _DONE sentinel for `[DONE]`, or None for other lines."""
+    if not line.startswith("data:"):
+        return None
+    data = line[5:].strip()
+    if data == "[DONE]":
+        return _DONE
+    return json.loads(data)
+
+
+class _StreamState:
+    """Accumulates text, tool-call fragments, usage and finish reason across SSE events."""
+
+    def __init__(self, model: str):
+        self.model = model
+        self.content: list[str] = []
+        self.tools: dict[int, dict[str, Any]] = {}
+        self.usage = Usage()
+        self.finish = "stop"
+
+    def apply(self, event: dict[str, Any]) -> list[str]:
+        self.model = event.get("model") or self.model
+        if event.get("usage"):
+            u = event["usage"]
+            self.usage = Usage(input_tokens=u.get("prompt_tokens", 0), output_tokens=u.get("completion_tokens", 0))
+        deltas: list[str] = []
+        for choice in event.get("choices") or []:
+            delta = choice.get("delta") or {}
+            if delta.get("content"):
+                self.content.append(delta["content"])
+                deltas.append(delta["content"])
+            for tc in delta.get("tool_calls") or []:
+                self._merge_tool_call(tc)
+            if choice.get("finish_reason"):
+                self.finish = _finish_reason(choice["finish_reason"])
+        return deltas
+
+    def _merge_tool_call(self, tc: dict[str, Any]) -> None:
+        slot = self.tools.setdefault(tc.get("index", 0), {"id": None, "function": {"name": "", "arguments": ""}})
+        slot["id"] = tc.get("id") or slot["id"]
+        fn = tc.get("function") or {}
+        slot["function"]["name"] += fn.get("name") or ""
+        slot["function"]["arguments"] += fn.get("arguments") or ""
+
+    def response(self, provider: str) -> GenerationResponse:
+        return GenerationResponse(
+            content="".join(self.content) or None,
+            tool_calls=parse_tool_calls([self.tools[k] for k in sorted(self.tools)]),
+            finish_reason=self.finish,  # type: ignore[arg-type]
+            usage=self.usage,
+            provider=provider,
+            model=self.model,
+        )
+
+
 class OpenAICompatibleProvider(ModelProvider):
     name = "openai_compatible"
     supports_native_json_schema = True
@@ -149,12 +213,6 @@ class OpenAICompatibleProvider(ModelProvider):
             )
         return resp.json()
 
-    @staticmethod
-    def _finish(reason: str | None) -> str:
-        return {"stop": "stop", "tool_calls": "tool_calls", "length": "length", "content_filter": "refusal"}.get(
-            reason or "", "other"
-        )
-
     def _parse(self, data: dict[str, Any]) -> GenerationResponse:
         choice = (data.get("choices") or [{}])[0]
         msg = choice.get("message") or {}
@@ -162,7 +220,7 @@ class OpenAICompatibleProvider(ModelProvider):
         return GenerationResponse(
             content=msg.get("content"),
             tool_calls=parse_tool_calls(msg.get("tool_calls")),
-            finish_reason=self._finish(choice.get("finish_reason")),  # type: ignore[arg-type]
+            finish_reason=_finish_reason(choice.get("finish_reason")),  # type: ignore[arg-type]
             usage=Usage(
                 input_tokens=usage.get("prompt_tokens", 0),
                 output_tokens=usage.get("completion_tokens", 0),
@@ -177,11 +235,7 @@ class OpenAICompatibleProvider(ModelProvider):
 
     async def stream(self, request: GenerationRequest) -> AsyncIterator[ModelChunk]:
         payload = self._payload(request, stream=True)
-        content_parts: list[str] = []
-        tool_buf: dict[int, dict[str, Any]] = {}
-        usage = Usage()
-        finish = "stop"
-        model = self.model
+        state = _StreamState(self.model)
         try:
             async with self._client.stream(
                 "POST", self._url(), json=payload, headers=self._headers(streaming=True)
@@ -195,43 +249,16 @@ class OpenAICompatibleProvider(ModelProvider):
                         status=resp.status_code,
                     )
                 async for line in resp.aiter_lines():
-                    if not line.startswith("data:"):
+                    event = _parse_sse_line(line)
+                    if event is None:
                         continue
-                    data = line[5:].strip()
-                    if data == "[DONE]":
+                    if event is _DONE:
                         break
-                    event = json.loads(data)
-                    model = event.get("model") or model
-                    if event.get("usage"):
-                        u = event["usage"]
-                        usage = Usage(
-                            input_tokens=u.get("prompt_tokens", 0), output_tokens=u.get("completion_tokens", 0)
-                        )
-                    for choice in event.get("choices") or []:
-                        delta = choice.get("delta") or {}
-                        if delta.get("content"):
-                            content_parts.append(delta["content"])
-                            yield ModelChunk(type="delta", text=delta["content"])
-                        for tc in delta.get("tool_calls") or []:
-                            slot = tool_buf.setdefault(
-                                tc.get("index", 0), {"id": None, "function": {"name": "", "arguments": ""}}
-                            )
-                            slot["id"] = tc.get("id") or slot["id"]
-                            fn = tc.get("function") or {}
-                            slot["function"]["name"] += fn.get("name") or ""
-                            slot["function"]["arguments"] += fn.get("arguments") or ""
-                        if choice.get("finish_reason"):
-                            finish = self._finish(choice["finish_reason"])
+                    for text in state.apply(event):
+                        yield ModelChunk(type="delta", text=text)
         except httpx.HTTPError as exc:
             raise ProviderError(self.name, f"stream failed: {exc}", retryable=True) from exc
-        response = GenerationResponse(
-            content="".join(content_parts) or None,
-            tool_calls=parse_tool_calls([tool_buf[k] for k in sorted(tool_buf)]),
-            finish_reason=finish,  # type: ignore[arg-type]
-            usage=usage,
-            provider=self.name,
-            model=model,
-        )
+        response = state.response(self.name)
         self._emit(request, response)
         yield ModelChunk(type="done", response=response)
 

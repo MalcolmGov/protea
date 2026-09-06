@@ -89,6 +89,21 @@ class ExampleMetadata(BaseModel):
         return self
 
 
+def _check_turn(i: int, m: Message, known_tools: set[str], open_calls: set[str]) -> None:
+    """Per-message rules: declared tools only, every tool result answers an open call, no empty assistant turns."""
+    if m.role == "assistant":
+        if not m.content and not m.tool_calls:
+            raise ValueError(f"message {i}: empty assistant turn")
+        for tc in m.tool_calls:
+            if known_tools and tc.name not in known_tools:
+                raise ValueError(f"message {i}: tool call to undeclared tool {tc.name!r}")
+            open_calls.add(tc.id)
+    elif m.role == "tool":
+        if not m.tool_call_id or m.tool_call_id not in open_calls:
+            raise ValueError(f"message {i}: tool result without a preceding matching tool call")
+        open_calls.discard(m.tool_call_id)
+
+
 class TrainingExample(BaseModel):
     metadata: ExampleMetadata
     messages: list[Message]
@@ -106,18 +121,8 @@ class TrainingExample(BaseModel):
         known_tools = {t.name for t in self.tools}
         open_calls: set[str] = set()
         for i, m in enumerate(msgs):
-            if m.role == "assistant":
-                for tc in m.tool_calls:
-                    if known_tools and tc.name not in known_tools:
-                        raise ValueError(f"message {i}: tool call to undeclared tool {tc.name!r}")
-                    open_calls.add(tc.id)
-            elif m.role == "tool":
-                if not m.tool_call_id or m.tool_call_id not in open_calls:
-                    raise ValueError(f"message {i}: tool result without a preceding matching tool call")
-                open_calls.discard(m.tool_call_id)
-            if m.role == "assistant" and not m.content and not m.tool_calls:
-                raise ValueError(f"message {i}: empty assistant turn")
-        if open_calls and msgs[-1].role == "assistant" and not msgs[-1].tool_calls:
+            _check_turn(i, m, known_tools, open_calls)
+        if open_calls and not msgs[-1].tool_calls:
             raise ValueError("unanswered tool calls before the final assistant turn")
         return self
 

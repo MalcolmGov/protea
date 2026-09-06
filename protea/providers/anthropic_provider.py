@@ -18,6 +18,30 @@ from protea.schemas.generation import (
 )
 
 
+def _assistant_blocks(m: Message) -> list[dict[str, Any]]:
+    blocks: list[dict[str, Any]] = []
+    if m.content:
+        blocks.append({"type": "text", "text": m.content})
+    blocks.extend({"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.arguments} for tc in m.tool_calls)
+    return blocks or [{"type": "text", "text": ""}]
+
+
+def _is_tool_result_message(msg: dict[str, Any] | None) -> bool:
+    if not msg or msg.get("role") != "user" or not isinstance(msg.get("content"), list):
+        return False
+    content = msg["content"]
+    return bool(content) and content[0].get("type") == "tool_result"
+
+
+def _append_tool_result(out: list[dict[str, Any]], m: Message) -> None:
+    """Parallel tool results must be returned in ONE user message."""
+    block = {"type": "tool_result", "tool_use_id": m.tool_call_id, "content": m.content or ""}
+    if out and _is_tool_result_message(out[-1]):
+        out[-1]["content"].append(block)
+    else:
+        out.append({"role": "user", "content": [block]})
+
+
 def to_anthropic_messages(messages: list[Message]) -> tuple[str | None, list[dict[str, Any]]]:
     system_parts: list[str] = []
     out: list[dict[str, Any]] = []
@@ -25,24 +49,9 @@ def to_anthropic_messages(messages: list[Message]) -> tuple[str | None, list[dic
         if m.role == "system":
             system_parts.append(m.content or "")
         elif m.role == "assistant":
-            blocks: list[dict[str, Any]] = []
-            if m.content:
-                blocks.append({"type": "text", "text": m.content})
-            for tc in m.tool_calls:
-                blocks.append({"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.arguments})
-            out.append({"role": "assistant", "content": blocks or [{"type": "text", "text": ""}]})
+            out.append({"role": "assistant", "content": _assistant_blocks(m)})
         elif m.role == "tool":
-            block = {"type": "tool_result", "tool_use_id": m.tool_call_id, "content": m.content or ""}
-            if (
-                out
-                and out[-1]["role"] == "user"
-                and isinstance(out[-1]["content"], list)
-                and out[-1]["content"]
-                and out[-1]["content"][0].get("type") == "tool_result"
-            ):
-                out[-1]["content"].append(block)  # parallel tool results go in ONE user message
-            else:
-                out.append({"role": "user", "content": [block]})
+            _append_tool_result(out, m)
         else:
             out.append({"role": "user", "content": m.content or ""})
     return ("\n\n".join(system_parts) or None), out

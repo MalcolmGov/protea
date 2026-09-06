@@ -61,7 +61,7 @@ class InMemoryUsageSink:
         self.events.append(event)
 
 
-_FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
+_FENCE = re.compile(r"```(?:json)?\s*([^`]*)```")
 
 
 def extract_json(text: str | None) -> Any:

@@ -62,9 +62,11 @@ async def test_tool_call_round_trip_and_payload_shape():
         name="get_order_status", parameters={"type": "object", "properties": {"order_id": {"type": "string"}}}
     )
     resp = await p.generate(GenerationRequest(messages=[Message(role="user", content="order 4821?")], tools=[tool]))
-    assert resp.finish_reason == "tool_calls" and resp.tool_calls[0].arguments == {"order_id": "4821"}
+    assert resp.finish_reason == "tool_calls"
+    assert resp.tool_calls[0].arguments == {"order_id": "4821"}
     assert resp.usage.input_tokens == 12
-    assert seen["url"] == "http://vllm:8000/v1/chat/completions" and seen["auth"] == "Bearer tok"
+    assert seen["url"] == "http://vllm:8000/v1/chat/completions"
+    assert seen["auth"] == "Bearer tok"
     assert seen["body"]["tools"][0]["function"]["name"] == "get_order_status"
 
 
@@ -84,13 +86,15 @@ async def test_structured_uses_response_format():
 
 
 async def test_http_errors_map_to_retryable_flag():
+    request = GenerationRequest(messages=[Message(role="user", content="x")])
     p = _provider(lambda r: httpx.Response(429, text="slow down"))
     with pytest.raises(ProviderError) as exc:
-        await p.generate(GenerationRequest(messages=[Message(role="user", content="x")]))
-    assert exc.value.retryable and exc.value.status == 429
+        await p.generate(request)
+    assert exc.value.retryable
+    assert exc.value.status == 429
     p2 = _provider(lambda r: httpx.Response(400, text="bad"))
     with pytest.raises(ProviderError) as exc2:
-        await p2.generate(GenerationRequest(messages=[Message(role="user", content="x")]))
+        await p2.generate(request)
     assert not exc2.value.retryable
 
 
@@ -122,8 +126,10 @@ async def test_streaming_assembles_text_and_tool_calls():
     chunks = [c async for c in p.stream(GenerationRequest(messages=[Message(role="user", content="x")]))]
     assert "".join(c.text for c in chunks if c.type == "delta") == "Hello"
     done = chunks[-1].response
-    assert done.tool_calls[0].id == "c9" and done.tool_calls[0].arguments == {"a": 1}
-    assert done.usage.output_tokens == 4 and done.finish_reason == "tool_calls"
+    assert done.tool_calls[0].id == "c9"
+    assert done.tool_calls[0].arguments == {"a": 1}
+    assert done.usage.output_tokens == 4
+    assert done.finish_reason == "tool_calls"
 
 
 def test_message_mapping_for_tool_turns():
@@ -153,4 +159,5 @@ async def test_azure_url_and_header():
     )
     await p.generate(GenerationRequest(messages=[Message(role="user", content="x")]))
     assert seen["url"] == "https://x.openai.azure.com/openai/deployments/gpt4o/chat/completions?api-version=2024-10-21"
-    assert seen["key"] == "k" and seen["auth"] is None
+    assert seen["key"] == "k"
+    assert seen["auth"] is None

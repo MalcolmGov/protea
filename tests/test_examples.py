@@ -33,27 +33,24 @@ def test_unknown_language_rejected(meta_kwargs):
 
 
 def test_tool_result_without_call_rejected(meta_kwargs):
+    metadata = ExampleMetadata(**meta_kwargs)
+    messages = [
+        Message(role="user", content="hi"),
+        Message(role="tool", tool_call_id="nope", content="{}"),
+        Message(role="assistant", content="done"),
+    ]
     with pytest.raises(ValidationError, match="tool result without"):
-        TrainingExample(
-            metadata=ExampleMetadata(**meta_kwargs),
-            messages=[
-                Message(role="user", content="hi"),
-                Message(role="tool", tool_call_id="nope", content="{}"),
-                Message(role="assistant", content="done"),
-            ],
-        )
+        TrainingExample(metadata=metadata, messages=messages)
 
 
 def test_undeclared_tool_rejected(meta_kwargs, lookup_tool):
+    metadata = ExampleMetadata(**meta_kwargs)
+    messages = [
+        Message(role="user", content="delete everything"),
+        Message(role="assistant", tool_calls=[ToolCall(id="x", name="delete_customer", arguments={})]),
+    ]
     with pytest.raises(ValidationError, match="undeclared tool"):
-        TrainingExample(
-            metadata=ExampleMetadata(**meta_kwargs),
-            tools=[lookup_tool],
-            messages=[
-                Message(role="user", content="delete everything"),
-                Message(role="assistant", tool_calls=[ToolCall(id="x", name="delete_customer", arguments={})]),
-            ],
-        )
+        TrainingExample(metadata=metadata, tools=[lookup_tool], messages=messages)
 
 
 def test_validate_jsonl_reports_stats_and_errors(tmp_path, tool_example, meta_kwargs):
@@ -71,7 +68,8 @@ def test_validate_jsonl_reports_stats_and_errors(tmp_path, tool_example, meta_kw
     path = tmp_path / "ds.jsonl"
     path.write_text("\n".join(lines))
     report = validate_jsonl(path)
-    assert report.total == 4 and report.valid == 3
+    assert report.total == 4
+    assert report.valid == 3
     assert report.duplicate_ids == 1
     assert report.by_task_type == {TaskType.TOOL_CALLING.value: 3}
     assert report.golden_ids == ["golden-1"]

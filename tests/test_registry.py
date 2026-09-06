@@ -34,8 +34,9 @@ def test_dataset_registry_roundtrip_and_verify(tmp_path):
     assert again.verify("agent-training-0.1.0", tmp_path)
     data.write_text("tampered")
     assert not again.verify("agent-training-0.1.0", tmp_path)
+    duplicate = DatasetEntry(name="agent-training", version="0.1.0", path="x", sha256="0")
     with pytest.raises(RegistryError, match="already registered"):
-        again.add(DatasetEntry(name="agent-training", version="0.1.0", path="x", sha256="0"))
+        again.add(duplicate)
 
 
 def test_model_lifecycle_transitions(tmp_path):

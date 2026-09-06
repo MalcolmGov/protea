@@ -12,7 +12,8 @@ REPO = Path(__file__).resolve().parent.parent
 def test_config_validate_repo_configs():
     result = runner.invoke(app, ["config", "validate", str(REPO / "configs")])
     assert result.exit_code == 0, result.output
-    assert "FAIL" not in result.output and result.output.count("ok ") >= 7
+    assert "FAIL" not in result.output
+    assert result.output.count("ok ") >= 7
 
 
 def test_config_validate_rejects_bad_file(tmp_path):
@@ -23,7 +24,8 @@ def test_config_validate_rejects_bad_file(tmp_path):
         "dataset: {train: a, validation: b, dataset_key: k}\noutput: {experiment_name: e}\n"
     )
     result = runner.invoke(app, ["config", "validate", str(bad)])
-    assert result.exit_code == 1 and "FAIL" in result.output
+    assert result.exit_code == 1
+    assert "FAIL" in result.output
 
 
 def test_providers_list_and_unconfigured_health(monkeypatch):
@@ -33,9 +35,12 @@ def test_providers_list_and_unconfigured_health(monkeypatch):
 
     get_settings.cache_clear()
     result = runner.invoke(app, ["providers", "list"])
-    assert result.exit_code == 0 and "mock" in result.output and "anthropic" in result.output
+    assert result.exit_code == 0
+    assert "mock" in result.output
+    assert "anthropic" in result.output
     health = runner.invoke(app, ["providers", "health", "mock"])
-    assert health.exit_code == 0 and json.loads(health.output)["ok"] is True
+    assert health.exit_code == 0
+    assert json.loads(health.output)["ok"] is True
     missing = runner.invoke(app, ["providers", "health", "openai"])
     assert missing.exit_code == 1
 
@@ -45,12 +50,14 @@ def test_dataset_validate_and_stats(tmp_path, tool_example):
     path.write_text(tool_example.model_dump_json() + "\n")
     assert runner.invoke(app, ["dataset", "validate", str(path)]).exit_code == 0
     stats = runner.invoke(app, ["dataset", "stats", str(path)])
-    assert stats.exit_code == 0 and "tool_calling=1" in stats.output
+    assert stats.exit_code == 0
+    assert "tool_calling=1" in stats.output
 
 
 def test_dataset_build_is_explicitly_planned():
     result = runner.invoke(app, ["dataset", "build"])
-    assert result.exit_code == 2 and "planned" in result.output.lower()
+    assert result.exit_code == 2
+    assert "planned" in result.output.lower()
 
 
 def test_registry_commands(tmp_path, monkeypatch):
@@ -68,7 +75,8 @@ def test_registry_commands(tmp_path, monkeypatch):
         )
     )
     ok = runner.invoke(app, ["registry", "promote", "protea-agent-0.1.0", "--to", "candidate"])
-    assert ok.exit_code == 0 and "candidate" in ok.output
+    assert ok.exit_code == 0
+    assert "candidate" in ok.output
     bad = runner.invoke(app, ["registry", "promote", "protea-agent-0.1.0", "--to", "production"])
     assert bad.exit_code == 1
     get_settings.cache_clear()

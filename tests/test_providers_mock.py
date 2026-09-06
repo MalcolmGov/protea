@@ -20,10 +20,12 @@ async def test_generate_records_usage_without_prompt_text():
     sink = InMemoryUsageSink()
     p = MockProvider(["hello"], usage_sink=sink)
     resp = await p.generate(_req("secret prompt", task_type="agent_generation", tenant_ref="t-hash"))
-    assert resp.content == "hello" and resp.provider == "mock"
+    assert resp.content == "hello"
+    assert resp.provider == "mock"
     assert len(sink.events) == 1
     ev = sink.events[0]
-    assert ev.task_type == "agent_generation" and ev.tenant_ref == "t-hash"
+    assert ev.task_type == "agent_generation"
+    assert ev.tenant_ref == "t-hash"
     assert "secret" not in ev.model_dump_json()
 
 
@@ -36,17 +38,21 @@ async def test_structured_output_validates():
 
 async def test_structured_output_failure_carries_raw():
     p = MockProvider(["not json at all"])
+    request = _req()
     with pytest.raises(StructuredOutputError) as exc:
-        await p.generate_structured(_req(), Spec)
-    assert exc.value.raw_text == "not json at all" and exc.value.retryable
+        await p.generate_structured(request, Spec)
+    assert exc.value.raw_text == "not json at all"
+    assert exc.value.retryable
 
 
 async def test_tool_call_and_stream_default():
     p = MockProvider([ToolCall(id="c1", name="lookup", arguments={"id": 1}), "streamed text"])
     resp = await p.generate(_req())
-    assert resp.finish_reason == "tool_calls" and resp.tool_calls[0].name == "lookup"
+    assert resp.finish_reason == "tool_calls"
+    assert resp.tool_calls[0].name == "lookup"
     chunks = [c async for c in p.stream(_req())]
-    assert chunks[0].text == "streamed text" and chunks[-1].type == "done"
+    assert chunks[0].text == "streamed text"
+    assert chunks[-1].type == "done"
 
 
 async def test_health():

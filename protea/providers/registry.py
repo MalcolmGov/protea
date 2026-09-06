@@ -35,6 +35,109 @@ def provider_status(settings: ProteaSettings | None = None) -> dict[str, dict[st
     }
 
 
+def _build_mock(s: ProteaSettings, model: str | None, kw: dict[str, Any], ov: dict[str, Any]) -> ModelProvider:
+    from protea.providers.mock import MockProvider
+
+    return MockProvider(model=model or "mock-1", **kw)
+
+
+def _build_anthropic(s: ProteaSettings, model: str | None, kw: dict[str, Any], ov: dict[str, Any]) -> ModelProvider:
+    from protea.providers.anthropic_provider import AnthropicProvider
+
+    return AnthropicProvider(
+        model=model or s.anthropic_model, api_key=s.anthropic_api_key, timeout_s=s.request_timeout_s, **kw, **ov
+    )
+
+
+def _build_openai_compatible(
+    name: str,
+    model: str,
+    base_url: str | None,
+    api_key: str | None,
+    s: ProteaSettings,
+    kw: dict[str, Any],
+    ov: dict[str, Any],
+) -> ModelProvider:
+    from protea.providers.openai_compatible import OpenAICompatibleProvider
+
+    if not base_url:
+        raise ProviderNotConfigured(name, _NEEDS[name])
+    return OpenAICompatibleProvider(
+        model=model, base_url=base_url, api_key=api_key, name=name, timeout_s=s.request_timeout_s, **kw, **ov
+    )
+
+
+def _build_openai(s: ProteaSettings, model: str | None, kw: dict[str, Any], ov: dict[str, Any]) -> ModelProvider:
+    if not s.openai_api_key:
+        raise ProviderNotConfigured("openai", _NEEDS["openai"])
+    base_url = ov.pop("base_url", s.openai_base_url)
+    return _build_openai_compatible("openai", model or s.openai_model, base_url, s.openai_api_key, s, kw, ov)
+
+
+def _build_ollama(s: ProteaSettings, model: str | None, kw: dict[str, Any], ov: dict[str, Any]) -> ModelProvider:
+    return _build_openai_compatible("ollama", model or s.ollama_model, s.ollama_base_url, None, s, kw, ov)
+
+
+def _build_protea(s: ProteaSettings, model: str | None, kw: dict[str, Any], ov: dict[str, Any]) -> ModelProvider:
+    return _build_openai_compatible(
+        "protea", model or s.protea_inference_model, s.protea_inference_url, s.protea_inference_token, s, kw, ov
+    )
+
+
+def _build_generic(s: ProteaSettings, model: str | None, kw: dict[str, Any], ov: dict[str, Any]) -> ModelProvider:
+    return _build_openai_compatible(
+        "openai_compatible", model or "default", ov.pop("base_url", None), ov.pop("api_key", None), s, kw, ov
+    )
+
+
+def _build_google(s: ProteaSettings, model: str | None, kw: dict[str, Any], ov: dict[str, Any]) -> ModelProvider:
+    from protea.providers.google import GoogleProvider
+
+    if not s.google_api_key:
+        raise ProviderNotConfigured("google", _NEEDS["google"])
+    return GoogleProvider(
+        model=model or s.google_model, api_key=s.google_api_key, timeout_s=s.request_timeout_s, **kw, **ov
+    )
+
+
+def _build_azure(s: ProteaSettings, model: str | None, kw: dict[str, Any], ov: dict[str, Any]) -> ModelProvider:
+    from protea.providers.openai_compatible import AzureOpenAIProvider
+
+    deployment = model or s.azure_openai_deployment
+    if not (s.azure_openai_endpoint and s.azure_openai_api_key and deployment):
+        raise ProviderNotConfigured("azure_openai", _NEEDS["azure_openai"])
+    return AzureOpenAIProvider(
+        deployment=deployment,
+        endpoint=s.azure_openai_endpoint,
+        api_key=s.azure_openai_api_key,
+        api_version=s.azure_openai_api_version,
+        timeout_s=s.request_timeout_s,
+        **kw,
+        **ov,
+    )
+
+
+_NEEDS = {
+    "openai": "OPENAI_API_KEY",
+    "google": "GOOGLE_API_KEY",
+    "azure_openai": "AZURE_OPENAI_ENDPOINT / AZURE_OPENAI_API_KEY / AZURE_OPENAI_DEPLOYMENT",
+    "ollama": "OLLAMA_BASE_URL",
+    "protea": "PROTEA_INFERENCE_URL",
+    "openai_compatible": "base_url",
+}
+
+_BUILDERS = {
+    "mock": _build_mock,
+    "anthropic": _build_anthropic,
+    "openai": _build_openai,
+    "google": _build_google,
+    "azure_openai": _build_azure,
+    "ollama": _build_ollama,
+    "protea": _build_protea,
+    "openai_compatible": _build_generic,
+}
+
+
 def build_provider(
     name: str,
     *,
@@ -43,100 +146,7 @@ def build_provider(
     usage_sink: UsageSink | None = None,
     **overrides: Any,
 ) -> ModelProvider:
-    s = settings or get_settings()
-    kw: dict[str, Any] = {"usage_sink": usage_sink}
-    if name == "mock":
-        from protea.providers.mock import MockProvider
-
-        return MockProvider(model=model or "mock-1", **kw)
-    if name == "anthropic":
-        from protea.providers.anthropic_provider import AnthropicProvider
-
-        return AnthropicProvider(
-            model=model or s.anthropic_model,
-            api_key=s.anthropic_api_key,
-            timeout_s=s.request_timeout_s,
-            **kw,
-            **overrides,
-        )
-    if name == "openai":
-        from protea.providers.openai_compatible import OpenAICompatibleProvider
-
-        if not s.openai_api_key:
-            raise ProviderNotConfigured("openai", "OPENAI_API_KEY")
-        return OpenAICompatibleProvider(
-            model=model or s.openai_model,
-            base_url=overrides.pop("base_url", s.openai_base_url),
-            api_key=s.openai_api_key,
-            name="openai",
-            timeout_s=s.request_timeout_s,
-            **kw,
-            **overrides,
-        )
-    if name == "google":
-        from protea.providers.google import GoogleProvider
-
-        if not s.google_api_key:
-            raise ProviderNotConfigured("google", "GOOGLE_API_KEY")
-        return GoogleProvider(
-            model=model or s.google_model, api_key=s.google_api_key, timeout_s=s.request_timeout_s, **kw, **overrides
-        )
-    if name == "azure_openai":
-        from protea.providers.openai_compatible import AzureOpenAIProvider
-
-        if not (s.azure_openai_endpoint and s.azure_openai_api_key and (model or s.azure_openai_deployment)):
-            raise ProviderNotConfigured(
-                "azure_openai", "AZURE_OPENAI_ENDPOINT / AZURE_OPENAI_API_KEY / AZURE_OPENAI_DEPLOYMENT"
-            )
-        return AzureOpenAIProvider(
-            deployment=model or s.azure_openai_deployment,
-            endpoint=s.azure_openai_endpoint,
-            api_key=s.azure_openai_api_key,
-            api_version=s.azure_openai_api_version,
-            timeout_s=s.request_timeout_s,
-            **kw,
-            **overrides,
-        )  # type: ignore[arg-type]
-    if name == "ollama":
-        from protea.providers.openai_compatible import OpenAICompatibleProvider
-
-        if not s.ollama_base_url:
-            raise ProviderNotConfigured("ollama", "OLLAMA_BASE_URL")
-        return OpenAICompatibleProvider(
-            model=model or s.ollama_model,
-            base_url=s.ollama_base_url,
-            api_key=None,
-            name="ollama",
-            timeout_s=s.request_timeout_s,
-            **kw,
-            **overrides,
-        )
-    if name == "protea":
-        from protea.providers.openai_compatible import OpenAICompatibleProvider
-
-        if not s.protea_inference_url:
-            raise ProviderNotConfigured("protea", "PROTEA_INFERENCE_URL")
-        return OpenAICompatibleProvider(
-            model=model or s.protea_inference_model,
-            base_url=s.protea_inference_url,
-            api_key=s.protea_inference_token,
-            name="protea",
-            timeout_s=s.request_timeout_s,
-            **kw,
-            **overrides,
-        )
-    if name == "openai_compatible":
-        from protea.providers.openai_compatible import OpenAICompatibleProvider
-
-        base_url = overrides.pop("base_url", None)
-        if not base_url:
-            raise ProviderNotConfigured("openai_compatible", "base_url")
-        return OpenAICompatibleProvider(
-            model=model or "default",
-            base_url=base_url,
-            api_key=overrides.pop("api_key", None),
-            timeout_s=s.request_timeout_s,
-            **kw,
-            **overrides,
-        )
-    raise ValueError(f"unknown provider {name!r}; known: {', '.join(PROVIDER_NAMES)}")
+    builder = _BUILDERS.get(name)
+    if builder is None:
+        raise ValueError(f"unknown provider {name!r}; known: {', '.join(PROVIDER_NAMES)}")
+    return builder(settings or get_settings(), model, {"usage_sink": usage_sink}, dict(overrides))

@@ -20,6 +20,24 @@ from protea.schemas.generation import (
 _RETRYABLE = {408, 429, 500, 502, 503, 504}
 
 
+def _model_parts(m: Message) -> list[dict[str, Any]]:
+    parts: list[dict[str, Any]] = []
+    if m.content:
+        parts.append({"text": m.content})
+    parts.extend({"functionCall": {"name": tc.name, "args": tc.arguments}} for tc in m.tool_calls)
+    return parts or [{"text": ""}]
+
+
+def _function_response_part(m: Message) -> dict[str, Any]:
+    try:
+        payload: Any = json.loads(m.content or "")
+    except json.JSONDecodeError:
+        payload = {"result": m.content}
+    if not isinstance(payload, dict):
+        payload = {"result": payload}
+    return {"functionResponse": {"name": m.name or "tool", "response": payload}}
+
+
 def to_gemini_contents(messages: list[Message]) -> tuple[str | None, list[dict[str, Any]]]:
     system_parts: list[str] = []
     contents: list[dict[str, Any]] = []
@@ -27,30 +45,9 @@ def to_gemini_contents(messages: list[Message]) -> tuple[str | None, list[dict[s
         if m.role == "system":
             system_parts.append(m.content or "")
         elif m.role == "assistant":
-            parts: list[dict[str, Any]] = []
-            if m.content:
-                parts.append({"text": m.content})
-            for tc in m.tool_calls:
-                parts.append({"functionCall": {"name": tc.name, "args": tc.arguments}})
-            contents.append({"role": "model", "parts": parts or [{"text": ""}]})
+            contents.append({"role": "model", "parts": _model_parts(m)})
         elif m.role == "tool":
-            try:
-                payload: Any = json.loads(m.content or "")
-            except json.JSONDecodeError:
-                payload = {"result": m.content}
-            contents.append(
-                {
-                    "role": "user",
-                    "parts": [
-                        {
-                            "functionResponse": {
-                                "name": m.name or "tool",
-                                "response": payload if isinstance(payload, dict) else {"result": payload},
-                            }
-                        }
-                    ],
-                }
-            )
+            contents.append({"role": "user", "parts": [_function_response_part(m)]})
         else:
             contents.append({"role": "user", "parts": [{"text": m.content or ""}]})
     return ("\n\n".join(system_parts) or None), contents
