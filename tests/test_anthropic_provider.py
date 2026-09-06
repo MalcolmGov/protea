@@ -49,6 +49,7 @@ async def test_tool_use_block_and_params():
     assert params["messages"][0]["role"] == "user"
     assert params["tools"][0]["input_schema"] == {"type": "object"}
     assert params["tools"][0]["strict"] is True
+    assert "temperature" not in params  # rejected by Claude 5 models and absent from the 1.x SDK signature
 
 
 async def test_structured_uses_output_config():

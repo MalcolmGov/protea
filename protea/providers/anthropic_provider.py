@@ -86,11 +86,12 @@ class AnthropicProvider(ModelProvider):
 
     def _params(self, request: GenerationRequest) -> dict[str, Any]:
         system, messages = to_anthropic_messages(request.messages)
+        # No sampling parameters: the Claude 5 models reject temperature/top_p/top_k and the
+        # anthropic 1.x SDK removed them from messages.create(); request.temperature is ignored here.
         params: dict[str, Any] = {
             "model": self.model,
             "max_tokens": request.max_tokens,
             "messages": messages,
-            "temperature": request.temperature,
         }
         if system:
             params["system"] = system
