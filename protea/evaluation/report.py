@@ -20,7 +20,7 @@ def report_paths(report: BenchmarkReport, out_dir: Path) -> tuple[Path, Path]:
     base = (
         out_dir / f"{report.suite}-{report.version}" / f"{_slug(report.provider)}-{_slug(report.model)}-{report.run_id}"
     )
-    return base.with_suffix(".json"), base.with_suffix(".md")
+    return Path(f"{base}.json"), Path(f"{base}.md")  # not with_suffix: model ids such as Qwen2.5-0.5B carry dots
 
 
 def _fmt(x: float | None, pct: bool = True) -> str:

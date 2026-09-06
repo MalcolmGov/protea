@@ -45,13 +45,15 @@ async def test_generate_with_a_tiny_random_model(tmp_path):
     model, tok = build_tiny_random(records)
     model.save_pretrained(tmp_path / "tiny")
     tok.save_pretrained(tmp_path / "tiny")
-    provider = LocalHFProvider(str(tmp_path / "tiny"), threads=1)
+    provider = LocalHFProvider(str(tmp_path / "tiny"), threads=1, served_as="protea-agent-0.0.1")
     health = await provider.health()
     assert health.ok
+    assert provider.model == "protea-agent-0.0.1"
     resp = await provider.generate(
         GenerationRequest(messages=[Message(role="user", content="hello there")], max_tokens=6, temperature=0.0)
     )
     assert resp.provider == "local"
+    assert resp.model == "protea-agent-0.0.1"
     assert resp.usage.input_tokens > 0
     assert 0 < resp.usage.output_tokens <= 6
     assert resp.finish_reason in ("stop", "length")

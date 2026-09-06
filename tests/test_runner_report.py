@@ -162,3 +162,20 @@ def test_task_file_roundtrip_and_duplicate_ids(tmp_path: Path):
     path.write_text(path.read_text() + json.dumps(json.loads(path.read_text().splitlines()[0])) + "\n")
     with pytest.raises(ValueError, match="duplicate task id"):
         load_tasks(path)
+
+
+def test_report_paths_keep_dotted_model_ids(tmp_path):
+    from protea.evaluation.report import report_paths
+    from protea.evaluation.runner import BenchmarkReport
+
+    rep = BenchmarkReport(
+        suite="zarabench",
+        version="0.1.1",
+        run_id="r",
+        created_at="t",
+        provider="local",
+        model="Qwen/Qwen2.5-0.5B-Instruct",
+    )
+    json_path, md_path = report_paths(rep, tmp_path)
+    assert json_path.name == "local-Qwen-Qwen2.5-0.5B-Instruct-r.json"
+    assert md_path.name == "local-Qwen-Qwen2.5-0.5B-Instruct-r.md"

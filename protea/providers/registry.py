@@ -102,7 +102,13 @@ def _build_protea(s: ProteaSettings, model: str | None, kw: dict[str, Any], ov: 
 def _build_local(s: ProteaSettings, model: str | None, kw: dict[str, Any], ov: dict[str, Any]) -> ModelProvider:
     from protea.providers.local_hf import LocalHFProvider
 
-    return LocalHFProvider(model or s.local_model, ov.pop("adapter", s.local_adapter), **kw, **ov)
+    return LocalHFProvider(
+        model or s.local_model,
+        ov.pop("adapter", s.local_adapter),
+        served_as=ov.pop("served_as", s.local_served_as),
+        **kw,
+        **ov,
+    )
 
 
 def _build_generic(s: ProteaSettings, model: str | None, kw: dict[str, Any], ov: dict[str, Any]) -> ModelProvider:

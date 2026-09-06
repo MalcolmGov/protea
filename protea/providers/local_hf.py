@@ -74,9 +74,19 @@ class LocalHFProvider(ModelProvider):
     supports_native_json_schema = False
 
     def __init__(
-        self, model: str, adapter: str | None = None, *, device: str = "cpu", threads: int | None = None, **kw: Any
+        self,
+        model: str,
+        adapter: str | None = None,
+        *,
+        served_as: str | None = None,
+        device: str = "cpu",
+        threads: int | None = None,
+        **kw: Any,
     ):
-        super().__init__(model=model, **kw)
+        """`model` is the Hugging Face id or path to load; `served_as` is the name reported on responses and in
+        benchmark reports (the registry key of the adapter, so release checks can find the evidence)."""
+        super().__init__(model=served_as or model, **kw)
+        self.model_path = model
         self.adapter = adapter
         self.device = device
         self.threads = threads
@@ -98,8 +108,8 @@ class LocalHFProvider(ModelProvider):
                 raise ProviderError(self.name, f"transformers/torch not installed: {exc}") from exc
             if self.threads:
                 torch.set_num_threads(self.threads)
-            tok = AutoTokenizer.from_pretrained(self.model)
-            model = AutoModelForCausalLM.from_pretrained(self.model, dtype=torch.float32)
+            tok = AutoTokenizer.from_pretrained(self.model_path)
+            model = AutoModelForCausalLM.from_pretrained(self.model_path, dtype=torch.float32)
             if self.adapter:
                 from peft import PeftModel
 
@@ -142,7 +152,7 @@ class LocalHFProvider(ModelProvider):
             finish_reason=finish,  # type: ignore[arg-type]
             usage=Usage(input_tokens=int(inputs["input_ids"].shape[1]), output_tokens=int(len(new_tokens))),
             provider=self.name,
-            model=self.model if not self.adapter else f"{self.model}+{self.adapter.rstrip('/').rsplit('/', 1)[-1]}",
+            model=self.model,
             latency_ms=int((time.perf_counter() - started) * 1000),
         )
 

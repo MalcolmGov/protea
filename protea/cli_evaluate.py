@@ -196,13 +196,18 @@ def evaluate_run(
     judge_model: str | None = typer.Option(None),
     confirm: bool = typer.Option(False, "--confirm", help="Required for any provider that spends tokens."),
     label: str | None = typer.Option(None, help="Run id; defaults to a UTC timestamp."),
+    max_tokens: int | None = typer.Option(None, help="Override the config's max_tokens (recorded in the config hash)."),
 ) -> None:
     """Run the suite against a provider and write JSON + Markdown reports. Paid providers need --confirm."""
+    from protea.config import config_hash
     from protea.evaluation.judge import check_independence
     from protea.evaluation.report import write_report
     from protea.evaluation.runner import run_benchmark
 
     cfg, cfg_hash, tasks, digest = _load(config, root)
+    if max_tokens is not None:
+        cfg = cfg.model_copy(update={"max_tokens": max_tokens})
+        cfg_hash = config_hash(cfg)
     tasks = _select(tasks, categories, limit, language)
     if not tasks:
         _fail("no tasks selected")
