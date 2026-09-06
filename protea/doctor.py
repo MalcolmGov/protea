@@ -1,4 +1,5 @@
 """`protea doctor` — report what this machine can and cannot do. Every check is a real probe."""
+
 from __future__ import annotations
 
 import os
@@ -34,7 +35,10 @@ def _gpu_detail() -> tuple[bool, str]:
     try:
         out = subprocess.run(
             [smi, "--query-gpu=name,memory.total", "--format=csv,noheader"],
-            capture_output=True, text=True, timeout=10, check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return False, f"nvidia-smi failed: {exc}"
@@ -47,7 +51,9 @@ def _cuda_detail() -> tuple[bool, str]:
         import torch  # type: ignore
     except ImportError:
         return False, "torch not installed (install the [train] or [serve] extra where GPUs live)"
-    return bool(torch.cuda.is_available()), f"torch {torch.__version__}, cuda={torch.version.cuda}, available={torch.cuda.is_available()}"
+    return bool(
+        torch.cuda.is_available()
+    ), f"torch {torch.__version__}, cuda={torch.version.cuda}, available={torch.cuda.is_available()}"
 
 
 def _memory_gb() -> float | None:
@@ -74,6 +80,9 @@ def run(cwd: str | None = None) -> DoctorReport:
     r.add("disk", free_gb >= 20, f"{free_gb} GB free (20 GB+ recommended for a base model download)")
     for name in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY", "HF_TOKEN"):
         r.add(f"env:{name}", bool(os.environ.get(name)), "set" if os.environ.get(name) else "not set")
-    r.add("inference_server", bool(os.environ.get("PROTEA_INFERENCE_URL")),
-          os.environ.get("PROTEA_INFERENCE_URL") or "PROTEA_INFERENCE_URL not set (planned: vLLM endpoint)")
+    r.add(
+        "inference_server",
+        bool(os.environ.get("PROTEA_INFERENCE_URL")),
+        os.environ.get("PROTEA_INFERENCE_URL") or "PROTEA_INFERENCE_URL not set (planned: vLLM endpoint)",
+    )
     return r

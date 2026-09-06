@@ -1,0 +1,16 @@
+id: qwen3-14b
+hf_repo: Qwen/Qwen3-14B
+family: qwen3
+license: apache-2.0
+params_b: 14.8
+context_length: 32768
+gated: false
+languages: [en, af, zu, sw, fr, pt, es, de, it, hi, zh]
+supports_tools: true
+serving:
+  dtype: bfloat16
+  quantization: awq
+  max_model_len: 8192
+  tool_call_parser: hermes
+  min_vram_gb: 24
+notes: Scale-up candidate if the 8B ZaraScore plateaus.

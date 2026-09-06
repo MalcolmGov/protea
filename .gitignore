@@ -13,7 +13,7 @@ build/
 protea_data/**/*.jsonl
 protea_data/**/*.parquet
 checkpoints/
-models/
+/weights/
 *.safetensors
 *.gguf
 mlruns/

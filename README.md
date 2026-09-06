@@ -9,9 +9,13 @@ The programme was specified under the working name "ZaraLM". Phase 0 discovery i
 | Area | Status |
 |---|---|
 | Phase 0 discovery documents | implemented — `docs/` |
-| `protea doctor`, `protea version`, `protea roadmap` | implemented |
-| Schemas, providers, registries, CLI for datasets | planned — Phase 1/2 |
-| Data pipeline | planned — Phase 2 |
+| CLI: `doctor`, `version`, `roadmap`, `config validate|show`, `providers list|health`, `dataset validate|stats`, `registry datasets|models|promote` | implemented |
+| Generation contract + `ModelProvider` with Anthropic, OpenAI, Google, Azure OpenAI, Ollama, Protea (vLLM) and mock adapters | implemented — Phase 1 (ADR-002) |
+| Training-example schema with provenance envelope and JSONL validation | implemented — Phase 1 (ADR-003) |
+| Dataset and model registries with release lifecycle | implemented — Phase 1 (ADR-004) |
+| YAML config schemas for models, training, inference, evaluation + content hashes | implemented — Phase 1 (ADR-005) |
+| Model selection (desk assessment) | implemented — `docs/model-selection.md`; measured in Phase 3 |
+| Data pipeline (`dataset build`) | planned — Phase 2 |
 | Evaluation framework + ZaraBench suite | planned — Phase 3 |
 | Training (SFT / LoRA / QLoRA, remote GPU) | planned — Phase 4 |
 | Inference (vLLM, OpenAI-compatible) | planned — Phase 5 |
@@ -22,11 +26,30 @@ Nothing in this repository starts paid infrastructure, downloads large models or
 ## Layout
 
 ```
-protea/            Python package (CLI, and — as phases land — schemas, providers, data_pipeline, evaluation, training, inference, router, registry, observability, security)
-configs/           YAML: models/, training/, inference/, evaluation/
-docs/              Phase 0 documents, ADRs, and the planned reference docs
-tests/             pytest; everything here runs without a GPU
+protea/
+  cli.py, doctor.py      commands
+  schemas/               generation contract, training-example format, registry entries
+  providers/             ModelProvider + adapters (anthropic, openai_compatible, google, mock) and build_provider()
+  config/                environment settings, YAML schemas, loader + content hash
+  registry/              file-backed dataset and model registries
+configs/                 models/, training/, inference/, evaluation/ (validated in CI)
+registry/                datasets.json, models.json (source of truth for releases)
+docs/                    Phase 0 documents, ADRs, model selection
+tests/                   pytest; everything here runs without a GPU
 ```
+
+## Using a provider from another project
+
+```python
+from protea.providers import build_provider
+from protea.schemas.generation import GenerationRequest, Message
+
+provider = build_provider("anthropic")  # or "protea", "openai", "google", "azure_openai", "ollama"
+resp = await provider.generate(GenerationRequest(messages=[Message(role="user", content="…")]))
+spec = await provider.generate_structured(request, MyPydanticModel)  # validated or StructuredOutputError
+```
+
+Every call emits a `UsageEvent` (tokens, latency, model, task type; never prompt text) to a `UsageSink` you can replace.
 
 ## Quick start
 

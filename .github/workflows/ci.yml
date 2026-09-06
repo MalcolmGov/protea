@@ -20,6 +20,7 @@ jobs:
       - run: ruff check .
       - run: pytest -q
       - run: protea doctor
+      - run: protea config validate configs
   secrets:
     runs-on: ubuntu-latest
     steps:
