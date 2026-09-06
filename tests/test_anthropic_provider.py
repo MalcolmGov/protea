@@ -151,4 +151,5 @@ async def test_schema_rejection_falls_back_to_prompt_instruction():
     first, second = client.messages.calls
     assert first["output_config"]["format"]["schema"]["additionalProperties"] is False
     assert "output_config" not in second
-    assert "JSON Schema" in second["system"] and '"lane"' in second["system"]
+    assert "JSON Schema" in second["system"]
+    assert '"lane"' in second["system"]
