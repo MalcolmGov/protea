@@ -1,1 +1,33 @@
-[]
+[
+  {
+    "artifact_sha256": "339ba908c6e4e5301c345326e9fb9a023ac9b983434130710ad4916b75f6ec89",
+    "base_model": "Qwen/Qwen2.5-0.5B-Instruct",
+    "checkpoint_uri": "checkpoints/rehearsal-cpu/rehearsal-cpu/rehearsal-1/adapter",
+    "created_at": "2026-09-06T15:58:48.572988Z",
+    "deployment_status": "experimental",
+    "evaluation_suite": null,
+    "experiment_id": "rehearsal-cpu/rehearsal-1",
+    "family": "protea-agent",
+    "git_commit": "7777bca8f0802b29e891677ff47a495404ba0acc",
+    "history": [],
+    "metrics": {
+      "epoch": 0.75,
+      "eval_entropy": 0.44574437156487046,
+      "eval_loss": 0.5471556782722473,
+      "eval_mean_token_accuracy": 0.8997136675909664,
+      "eval_num_tokens": 207565.0,
+      "eval_runtime": 194.0185,
+      "eval_samples_per_second": 0.459,
+      "eval_steps_per_second": 0.459,
+      "total_flos": 456679929964800.0,
+      "train_loss": 0.7539785989125569,
+      "train_runtime": 2557.4426,
+      "train_samples_per_second": 0.117,
+      "train_steps_per_second": 0.059
+    },
+    "model_card_path": "checkpoints/rehearsal-cpu/rehearsal-cpu/rehearsal-1/model-card.md",
+    "training_dataset": "agent-training-0.1.0",
+    "training_method": "lora",
+    "version": "0.0.1"
+  }
+]

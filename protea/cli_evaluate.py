@@ -11,7 +11,7 @@ import typer
 evaluate_app = typer.Typer(help="Evaluation framework and the ZaraBench suite.", no_args_is_help=True)
 
 DEFAULT_CONFIG = Path("configs/evaluation/zarabench-0.1.yaml")
-FREE_PROVIDERS = {"mock", "reference"}
+FREE_PROVIDERS = {"mock", "reference", "local"}  # local runs in-process: no tokens leave the machine
 
 
 def _fail(msg: str, code: int = 1) -> None:
