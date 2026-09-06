@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import re
 from collections import Counter
+from collections.abc import Callable
 
 from pydantic import BaseModel
 
@@ -68,30 +69,6 @@ def _card_plausible(s: str) -> bool:
     return 13 <= len(digits) <= 19 and _luhn_ok(digits)
 
 
-def scan_pii(text: str) -> list[PiiHit]:
-    hits: list[PiiHit] = []
-    t = text or ""
-    for m in _EMAIL.finditer(t):
-        if not m.group(0).lower().endswith(_PLACEHOLDER_DOMAINS):
-            hits.append(PiiHit(kind="email", preview=m.group(0)[:3] + "…"))
-    for m in _SA_ID.finditer(t):
-        if _sa_id_plausible(m.group(0)):
-            hits.append(PiiHit(kind="sa_id", preview=m.group(0)[:2] + "…"))
-    for pat in _PHONE_PATTERNS:
-        for m in pat.finditer(t):
-            hits.append(PiiHit(kind="phone", preview=m.group(0)[:4] + "…"))
-    for m in _CARD.finditer(t):
-        if _card_plausible(m.group(0)):
-            hits.append(PiiHit(kind="card", preview="card…"))
-    seen: set[int] = set()
-    for pat in _ADDRESS_FORMS:
-        for m in pat.finditer(t):
-            if m.group(1) in _STREET_WORDS and m.start() not in seen:
-                seen.add(m.start())
-                hits.append(PiiHit(kind="address", preview=m.group(0)[:8] + "…"))
-    return hits
-
-
 def _stable(seed: str, n: int) -> str:
     return str(int(hashlib.sha256(seed.encode()).hexdigest(), 16) % (10**n)).zfill(n)
 
@@ -104,45 +81,52 @@ def _fake_email(original: str) -> str:
     return f"person{_stable(original, 4)}@example.com"
 
 
+# kind, pattern, acceptance test on the match — order matters: emails and IDs before cards before phones.
+_DETECTORS: list[tuple[str, re.Pattern[str], Callable[[re.Match[str]], bool]]] = [
+    ("email", _EMAIL, lambda m: not m.group(0).lower().endswith(_PLACEHOLDER_DOMAINS)),
+    ("sa_id", _SA_ID, lambda m: _sa_id_plausible(m.group(0))),
+    ("card", _CARD, lambda m: _card_plausible(m.group(0))),
+    *[("phone", pat, lambda m: True) for pat in _PHONE_PATTERNS],
+    *[("address", pat, lambda m: m.group(1) in _STREET_WORDS) for pat in _ADDRESS_FORMS],
+]
+
+_PREVIEW_CHARS = {"email": 3, "sa_id": 2, "card": 0, "phone": 4, "address": 8}
+
+# Replacement per kind; `synthetic` keeps examples realistic, `placeholder` uses tokens.
+_REPLACERS: dict[str, Callable[[str, str], str]] = {
+    "email": lambda s, mode: "[EMAIL]" if mode == "placeholder" else _fake_email(s),
+    "sa_id": lambda s, mode: "[SA_ID]",
+    "card": lambda s, mode: "[CARD]",
+    "phone": lambda s, mode: "[PHONE]" if mode == "placeholder" else _fake_phone(s),
+    "address": lambda s, mode: "[ADDRESS]" if mode == "placeholder" else f"{_stable(s, 2)} Example Road",
+}
+
+
+def scan_pii(text: str) -> list[PiiHit]:
+    hits: list[PiiHit] = []
+    seen: set[tuple[str, int]] = set()
+    for kind, pat, accept in _DETECTORS:
+        for m in pat.finditer(text or ""):
+            if accept(m) and (kind, m.start()) not in seen:
+                seen.add((kind, m.start()))
+                n = _PREVIEW_CHARS[kind]
+                hits.append(PiiHit(kind=kind, preview=(m.group(0)[:n] + "…") if n else "card…"))
+    return hits
+
+
 def redact(text: str, mode: str = "synthetic") -> tuple[str, dict[str, int]]:
     """Replace PII in text. Returns (new_text, counts). Deterministic so the same value is replaced identically everywhere."""
-    counts: Counter[str] = Counter()
     if not text or mode == "block":
         return text, {}
+    counts: Counter[str] = Counter()
+    out = text
+    for kind, pat, accept in _DETECTORS:
 
-    def sub_email(m: re.Match[str]) -> str:
-        if m.group(0).lower().endswith(_PLACEHOLDER_DOMAINS):
-            return m.group(0)
-        counts["email"] += 1
-        return "[EMAIL]" if mode == "placeholder" else _fake_email(m.group(0))
+        def sub(m: re.Match[str], kind: str = kind, accept: Callable[[re.Match[str]], bool] = accept) -> str:
+            if not accept(m):
+                return m.group(0)
+            counts[kind] += 1
+            return _REPLACERS[kind](m.group(0), mode)
 
-    def sub_id(m: re.Match[str]) -> str:
-        if not _sa_id_plausible(m.group(0)):
-            return m.group(0)
-        counts["sa_id"] += 1
-        return "[SA_ID]"
-
-    def sub_card(m: re.Match[str]) -> str:
-        if not _card_plausible(m.group(0)):
-            return m.group(0)
-        counts["card"] += 1
-        return "[CARD]"
-
-    def sub_phone(m: re.Match[str]) -> str:
-        counts["phone"] += 1
-        return "[PHONE]" if mode == "placeholder" else _fake_phone(m.group(0))
-
-    def sub_addr(m: re.Match[str]) -> str:
-        if m.group(1) not in _STREET_WORDS:
-            return m.group(0)
-        counts["address"] += 1
-        return "[ADDRESS]" if mode == "placeholder" else f"{_stable(m.group(0), 2)} Example Road"
-
-    out = _EMAIL.sub(sub_email, text)
-    out = _SA_ID.sub(sub_id, out)
-    out = _CARD.sub(sub_card, out)
-    for pat in _PHONE_PATTERNS:
-        out = pat.sub(sub_phone, out)
-    for pat in _ADDRESS_FORMS:
-        out = pat.sub(sub_addr, out)
+        out = pat.sub(sub, out)
     return out, dict(counts)
