@@ -1,3 +1,4 @@
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -128,7 +129,8 @@ def test_benchmark_gate_and_canary_decide_protea_eligibility():
 
 
 def test_canary_bucket_is_stable_and_partitions_tenants():
-    assert canary_bucket("tenant-1") == canary_bucket("tenant-1")
+    expected = int(hashlib.sha256(b"tenant-1").hexdigest()[:8], 16) % 10_000 / 100.0
+    assert canary_bucket("tenant-1") == expected
     buckets = [canary_bucket(f"tenant-{i}") for i in range(200)]
     assert all(0 <= b < 100 for b in buckets)
     assert 5 < sum(1 for b in buckets if b < 25) < 95
@@ -142,8 +144,9 @@ def test_privacy_complexity_cost_and_pinning():
     strict = router.route(RouteRequest(task_type="tool_calling", privacy="strict", tenant_ref="t"))
     assert strict.route == "protea-agent"
     assert strict.fallbacks == []
+    strict_chat = RouteRequest(task_type="chat", privacy="strict")
     with pytest.raises(NoRouteError, match="self-hosted"):
-        router.route(RouteRequest(task_type="chat", privacy="strict"))
+        router.route(strict_chat)
     hard = router.route(RouteRequest(task_type="chat", prompt_chars=20000, tool_count=10, financial=True))
     assert hard.complexity == "high"
     assert hard.route == "frontier-a"
