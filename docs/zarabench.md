@@ -56,3 +56,8 @@ Commit the resulting JSON and Markdown under `evaluation/reports/` and reference
 - Add tasks by hand in the same JSONL format, or re-run `evaluate author` against a newer dataset build; then `evaluate seal` (a reviewed change: the hash and the family list change).
 - New evaluators go in `protea/evaluation/evaluators.py` as named checks; add a field to `Expect` and a test in `tests/test_evaluators.py`.
 - Non-English coverage is the first gap: author af/zu/xh/st/tn/sw tasks under `instruction_following` and `tool_calling` for 0.2.
+
+## Credentials in cloud sandboxes
+
+Claude Code cloud environments reserve `ANTHROPIC_API_KEY` for the session's own account and drop it from the
+sandbox. Set `PROTEA_ANTHROPIC_API_KEY` (or `PROTEA_OPENAI_API_KEY`) there instead; Protea reads either name.
