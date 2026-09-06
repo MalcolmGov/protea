@@ -11,6 +11,7 @@ import typer
 from protea import __version__
 from protea import doctor as _doctor
 from protea.cli_evaluate import evaluate_app
+from protea.cli_train import train_app
 
 app = typer.Typer(help="Protea — Moove Digital's proprietary model platform.", no_args_is_help=True)
 config_app = typer.Typer(help="Validate and inspect YAML configuration.", no_args_is_help=True)
@@ -22,10 +23,11 @@ app.add_typer(providers_app, name="providers")
 app.add_typer(dataset_app, name="dataset")
 app.add_typer(registry_app, name="registry")
 app.add_typer(evaluate_app, name="evaluate")
+app.add_typer(train_app, name="train")
 
 PLANNED = {
     "evaluate run --provider <base model>": "Phase 3 — needs a GPU host or a hosted inference endpoint (execution boundary)",
-    "train local|remote --dry-run": "Phase 4 — training and remote GPU adapters",
+    "train remote --confirm": "Phase 4 — launching the first QLoRA run rents a GPU (execution boundary)",
     "serve": "Phase 5 — vLLM container and facade",
 }
 
@@ -65,7 +67,8 @@ def roadmap() -> None:
 def config_validate(
     path: Path = typer.Argument(..., exists=True, help="A YAML file or a directory such as configs/."),
     kind: str | None = typer.Option(
-        None, help="model | training | inference | evaluation | dataset (inferred from the parent directory)."
+        None,
+        help="model | training | inference | evaluation | dataset | remote | pricing (inferred from the parent directory).",
     ),
 ) -> None:
     """Validate configuration files against their schemas and print each content hash."""
@@ -75,7 +78,7 @@ def config_validate(
     failures = 0
     for f in files:
         k = kind or f.parent.name.rstrip("s")
-        if k not in ("model", "training", "inference", "evaluation", "dataset"):
+        if k not in ("model", "training", "inference", "evaluation", "dataset", "remote", "pricing"):
             typer.echo(f"skip  {f} (unknown kind {k!r})")
             continue
         try:
@@ -328,3 +331,7 @@ def registry_promote(
         _fail(str(exc))
         return
     typer.echo(f"{entry.key} -> {entry.deployment_status.value}")
+
+
+if __name__ == "__main__":
+    app()

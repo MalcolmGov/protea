@@ -28,6 +28,7 @@ class ProteaSettings(BaseSettings):
     protea_inference_token: str | None = None
     protea_inference_model: str = "protea-agent"
     hf_token: str | None = None
+    runpod_api_key: str | None = None
     mlflow_tracking_uri: str | None = None
     registry_dir: str = Field(
         default="registry",

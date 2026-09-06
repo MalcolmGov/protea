@@ -12,6 +12,7 @@ build/
 # datasets, checkpoints and model weights are never committed
 protea_data/
 checkpoints/
+runs/
 /weights/
 *.safetensors
 *.gguf

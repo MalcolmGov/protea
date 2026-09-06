@@ -57,6 +57,9 @@ class TrainingSection(BaseModel):
     save_steps: int = 200
     eval_steps: int = 200
     logging_steps: int = 10
+    save_total_limit: int = 3
+    packing: bool = False
+    assistant_only_loss: bool = False  # needs a chat template with {% generation %} markers
 
 
 class DatasetSection(BaseModel):
@@ -74,7 +77,9 @@ class BudgetSection(BaseModel):
 
 
 class ModelSection(BaseModel):
-    base_model: str
+    base_model: str  # Hub id, local path, or "tiny-random" (a 2-layer random model for offline smoke runs)
+    revision: str | None = None
+    tokenizer: str | None = None  # defaults to base_model
     trust_remote_code: bool = False
     load_in_4bit: bool = False
 
@@ -180,11 +185,95 @@ class EvaluationConfig(BaseModel):
         return failed
 
 
+class StorageSpec(BaseModel):
+    """Where datasets, checkpoints and adapters live — never only on the instance's disk."""
+
+    kind: Literal["s3", "azure_blob", "pvc", "rsync"]
+    uri: str  # s3://bucket/prefix, https://account.blob.core.windows.net/container, pvc name, or user@host:/path
+
+
+class SshSection(BaseModel):
+    host: str
+    user: str = "ubuntu"
+    port: int = 22
+    workdir: str = "/opt/protea"
+    key_path: str | None = None
+    shutdown_when_done: bool = True
+
+
+class RunPodSection(BaseModel):
+    cloud_type: Literal["SECURE", "COMMUNITY"] = "SECURE"
+    volume_gb: int = 100
+    container_disk_gb: int = 50
+    template_id: str | None = None
+
+
+class AzureSection(BaseModel):
+    resource_group: str
+    location: str = "swedencentral"
+    vm_size: str = "Standard_NC24ads_A100_v4"
+    admin_user: str = "protea"
+    ssh_public_key_path: str = "~/.ssh/id_ed25519.pub"
+
+
+class KubernetesSection(BaseModel):
+    namespace: str = "protea"
+    pvc: str = "protea-data"
+    node_selector: dict[str, str] = Field(default_factory=dict)
+    service_account: str | None = None
+
+
+class RemoteJobConfig(BaseModel):
+    provider: Literal["ssh", "runpod", "azure", "kubernetes"]
+    gpu: str  # key in configs/remote/gpu-pricing.yaml
+    gpu_count: int = 1
+    image: str = "ghcr.io/malcolmgov/protea-train:latest"
+    spot: bool = False
+    storage: StorageSpec
+    max_runtime_minutes: int | None = None  # defaults to the training budget
+    idle_shutdown_minutes: int | None = None
+    checkpoint_sync_minutes: int = 10
+    ssh: SshSection | None = None
+    runpod: RunPodSection | None = None
+    azure: AzureSection | None = None
+    kubernetes: KubernetesSection | None = None
+
+    @model_validator(mode="after")
+    def _provider_section(self) -> RemoteJobConfig:
+        if getattr(self, self.provider) is None:
+            raise ValueError(f"provider={self.provider} requires a `{self.provider}` section")
+        if self.gpu_count < 1:
+            raise ValueError("gpu_count must be at least 1")
+        return self
+
+
+class GpuPrice(BaseModel):
+    vram_gb: int
+    usd_per_hour: dict[str, float]  # provider -> on-demand USD/hour ("generic" is the fallback)
+    spot_discount: float = 0.5
+    tokens_per_second: dict[str, float]  # size bucket (small | 8b | 14b | large) -> tokens/s per GPU
+
+    @model_validator(mode="after")
+    def _buckets(self) -> GpuPrice:
+        missing = {"small", "8b", "14b", "large"} - set(self.tokens_per_second)
+        if missing:
+            raise ValueError(f"tokens_per_second missing buckets {sorted(missing)}")
+        return self
+
+
+class GpuCatalogue(BaseModel):
+    """configs/pricing/gpu.yaml — indicative prices and throughputs for pre-flight estimates only."""
+
+    gpus: dict[str, GpuPrice]
+
+
 CONFIG_TYPES: dict[str, type[BaseModel]] = {
     "model": ModelConfig,
     "training": TrainingConfig,
     "inference": InferenceConfig,
     "evaluation": EvaluationConfig,
+    "remote": RemoteJobConfig,
+    "pricing": GpuCatalogue,
 }
 
 
