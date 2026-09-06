@@ -12,18 +12,12 @@
     "history": [],
     "metrics": {
       "epoch": 0.75,
+      "eval_accuracy": 0.8997136675909664,
       "eval_entropy": 0.44574437156487046,
       "eval_loss": 0.5471556782722473,
-      "eval_mean_token_accuracy": 0.8997136675909664,
-      "eval_num_tokens": 207565.0,
-      "eval_runtime": 194.0185,
-      "eval_samples_per_second": 0.459,
-      "eval_steps_per_second": 0.459,
-      "total_flos": 456679929964800.0,
+      "eval_runtime_s": 194.0185,
       "train_loss": 0.7539785989125569,
-      "train_runtime": 2557.4426,
-      "train_samples_per_second": 0.117,
-      "train_steps_per_second": 0.059
+      "train_runtime_s": 2557.4426
     },
     "model_card_path": "docs/models/protea-agent-0.0.1.md",
     "training_dataset": "agent-training-0.1.0",

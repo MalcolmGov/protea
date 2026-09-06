@@ -66,8 +66,8 @@ Commit the resulting JSON and Markdown under `evaluation/reports/` and reference
 ```
 
 The columns are the running count, elapsed time, a linear ETA from the average time per task so far, the
-task id and the deterministic score (`ERR` when the provider failed). Pass `--quiet` to suppress the lines;
-the JSON and Markdown reports are unchanged.
+task id and the deterministic score (`ERR` when the provider failed). The lines go to stderr only; the JSON and
+Markdown reports are unchanged.
 
 ## Credentials in cloud sandboxes
 

@@ -168,14 +168,12 @@ def _paid_gate(cfg, tasks, provider: str, model: str | None, judge_provider: str
         _fail("re-run with --confirm to proceed")
 
 
-def progress_printer(quiet: bool = False):
+def progress_printer():
     """Build an ``on_result`` callback that prints one progress line per finished task to stderr."""
     from time import monotonic
 
     from protea.evaluation.runner import progress_line
 
-    if quiet:
-        return None
     started = monotonic()
 
     def _print(done: int, total: int, result) -> None:
@@ -213,7 +211,6 @@ def evaluate_run(
     confirm: bool = typer.Option(False, "--confirm", help="Required for any provider that spends tokens."),
     label: str | None = typer.Option(None, help="Run id; defaults to a UTC timestamp."),
     max_tokens: int | None = typer.Option(None, help="Override the config's max_tokens (recorded in the config hash)."),
-    quiet: bool = typer.Option(False, "--quiet", help="Suppress the per-task progress lines on stderr."),
 ) -> None:
     """Run the suite against a provider and write JSON + Markdown reports. Paid providers need --confirm."""
     from protea.config import config_hash
@@ -245,7 +242,7 @@ def evaluate_run(
             run_id=label,
             config_hash=cfg_hash,
             task_set_hash=digest,
-            on_result=progress_printer(quiet),
+            on_result=progress_printer(),
         )
     )
     json_path, md_path = write_report(report, out, cfg)

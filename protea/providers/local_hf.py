@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 import threading
 import time
 from typing import Any
@@ -16,8 +15,7 @@ from typing import Any
 from protea.providers.base import ModelProvider, ProviderError
 from protea.schemas.generation import GenerationRequest, GenerationResponse, ModelHealth, ToolCall, Usage
 
-_TOOL_CALL = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.DOTALL)
-_TOOL_BLOCK = re.compile(r"<tool_call>.*?</tool_call>", re.DOTALL)  # stripped from content even when malformed
+_OPEN, _CLOSE = "<tool_call>", "</tool_call>"
 MAX_NEW_TOKENS_CAP = 4096
 
 
@@ -55,18 +53,27 @@ def to_chat_tools(request: GenerationRequest) -> list[dict[str, Any]] | None:
 def parse_tool_calls(text: str) -> tuple[str, list[ToolCall]]:
     """Split generated text into plain content and the tool calls it carries."""
     calls: list[ToolCall] = []
-    for i, m in enumerate(_TOOL_CALL.finditer(text)):
-        try:
-            obj = json.loads(m.group(1))
-        except json.JSONDecodeError:
-            continue
-        if isinstance(obj, dict) and obj.get("name"):
-            args = obj.get("arguments") or obj.get("parameters") or {}
-            calls.append(
-                ToolCall(id=f"call_{i + 1}", name=str(obj["name"]), arguments=args if isinstance(args, dict) else {})
-            )
-    content = _TOOL_BLOCK.sub("", text).strip()
-    return content, calls
+    content_parts: list[str] = []
+    head, *blocks = text.split(_OPEN)
+    content_parts.append(head)
+    for block in blocks:
+        payload, sep, rest = block.partition(_CLOSE)
+        content_parts.append(rest if sep else "")  # an unterminated block is dropped from the content too
+        call = _parse_call(payload, len(calls) + 1)
+        if call is not None:
+            calls.append(call)
+    return "".join(content_parts).strip(), calls
+
+
+def _parse_call(payload: str, index: int) -> ToolCall | None:
+    try:
+        obj = json.loads(payload.strip())
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(obj, dict) or not obj.get("name"):
+        return None
+    args = obj.get("arguments") or obj.get("parameters") or {}
+    return ToolCall(id=f"call_{index}", name=str(obj["name"]), arguments=args if isinstance(args, dict) else {})
 
 
 class LocalHFProvider(ModelProvider):
@@ -145,7 +152,11 @@ class LocalHFProvider(ModelProvider):
         new_tokens = out[0][inputs["input_ids"].shape[1] :]
         text = tok.decode(new_tokens, skip_special_tokens=True)
         content, calls = parse_tool_calls(text)
-        finish = "tool_calls" if calls else ("length" if len(new_tokens) >= max_new else "stop")
+        finish = "stop"
+        if calls:
+            finish = "tool_calls"
+        elif len(new_tokens) >= max_new:
+            finish = "length"
         return GenerationResponse(
             content=content or None,
             tool_calls=calls,

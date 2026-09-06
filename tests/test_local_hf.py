@@ -18,6 +18,24 @@ def test_parse_tool_calls_and_content():
     assert content == "plain answer"
 
 
+def test_parse_tool_calls_handles_nested_json_and_unterminated_blocks():
+    text = (
+        'Sure.<tool_call>{"name": "book", "arguments": {"slot": {"day": "mon"}}}</tool_call> done <tool_call>{"name":'
+    )
+    content, calls = parse_tool_calls(text)
+    assert content == "Sure. done"
+    assert [c.name for c in calls] == ["book"]
+    assert calls[0].arguments == {"slot": {"day": "mon"}}
+    assert calls[0].id == "call_1"
+
+
+def test_registry_metrics_keep_release_numbers_under_stable_names():
+    from protea.cli_train import registry_metrics
+
+    raw = {"train_loss": 0.75, "eval_loss": 0.55, "eval_mean_token_accuracy": 0.9, "eval_num_tokens": 207565.0}
+    assert registry_metrics(raw) == {"train_loss": 0.75, "eval_loss": 0.55, "eval_accuracy": 0.9}
+
+
 def test_chat_shape_carries_tool_calls_and_results():
     req = GenerationRequest(
         messages=[
