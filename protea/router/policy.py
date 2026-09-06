@@ -49,7 +49,7 @@ class Candidate(BaseModel):
     cost_tier: int = Field(default=2, ge=0, le=5)  # 0 = free/self-hosted … 5 = most expensive
     quality_tier: int = Field(default=2, ge=0, le=5)  # desk/benchmark quality rank used when no matrix score exists
     max_complexity: Complexity = "high"
-    task_types: list[str] = Field(default_factory=list)  # empty = any
+    task_types: list[str] = Field(default_factory=list)  # an empty list means the candidate serves every task type
     requires_benchmark: bool = False  # Protea-family routes: eligible only with a matrix score ≥ threshold
     version: str | None = None  # pinned model version label recorded on every decision
 
