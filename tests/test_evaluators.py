@@ -146,5 +146,6 @@ def test_provider_error_and_truncation():
 def test_expect_validation():
     with pytest.raises(ValueError):
         Expect(no_tool=True, tool="get_order")
+    undeclared = Expect(tool="not_declared")
     with pytest.raises(ValueError):
-        _task(Expect(tool="not_declared"))
+        _task(undeclared)

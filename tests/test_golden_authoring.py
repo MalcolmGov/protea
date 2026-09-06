@@ -87,7 +87,8 @@ def test_expect_from_eval_maps_the_estate_grammar():
 
 async def test_committed_zarabench_task_set_is_sealed_and_self_consistent():
     cfg = load_config(REPO / "configs/evaluation/zarabench-0.1.yaml", "evaluation")
-    assert cfg.tasks_path and cfg.lock_path
+    assert cfg.tasks_path
+    assert cfg.lock_path
     assert verify(REPO / cfg.lock_path, repo_root=REPO) == []
     tasks = load_tasks(REPO / cfg.tasks_path)
     stats = task_stats(tasks)

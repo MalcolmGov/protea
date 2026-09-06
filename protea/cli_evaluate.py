@@ -154,6 +154,34 @@ def evaluate_verify(
     typer.echo("ok: sealed task set verified")
 
 
+def _paid_gate(cfg, tasks, provider: str, model: str | None, judge_provider: str | None, confirm: bool) -> None:
+    """Print the §52 pre-flight and stop unless --confirm was given, for any provider that spends tokens."""
+    from protea.evaluation.runner import preflight
+
+    paid = provider not in FREE_PROVIDERS or (judge_provider is not None and judge_provider not in FREE_PROVIDERS)
+    if not paid:
+        return
+    typer.echo("execution boundary — this run spends tokens on a third-party service:")
+    for k, v in preflight(cfg, tasks, model or provider).items():
+        typer.echo(f"  {k:<24} {v}")
+    if not confirm:
+        _fail("re-run with --confirm to proceed")
+
+
+def _print_summary(report, json_path: Path, md_path: Path) -> None:
+    typer.echo(
+        f"ZaraScore {report.zarascore:.4f} (strict {report.zarascore_strict:.4f})"
+        f"{' (partial)' if report.partial else ''}  tasks {report.tasks_run}"
+    )
+    for c in report.categories:
+        typer.echo(
+            f"  {c.name:<22} n={c.n:<4} score={c.score:.3f} pass={c.pass_rate:.3f} judge_skipped={c.judge_skipped}"
+        )
+    if report.failed_gates:
+        typer.secho(f"failed gates: {report.failed_gates}", fg=typer.colors.YELLOW)
+    typer.echo(f"reports: {json_path}  {md_path}")
+
+
 @evaluate_app.command("run")
 def evaluate_run(
     provider: str = typer.Option("mock", help="mock | reference | any name from `protea providers list`."),
@@ -172,19 +200,14 @@ def evaluate_run(
     """Run the suite against a provider and write JSON + Markdown reports. Paid providers need --confirm."""
     from protea.evaluation.judge import check_independence
     from protea.evaluation.report import write_report
-    from protea.evaluation.runner import preflight, run_benchmark
+    from protea.evaluation.runner import run_benchmark
 
     cfg, cfg_hash, tasks, digest = _load(config, root)
     tasks = _select(tasks, categories, limit, language)
     if not tasks:
         _fail("no tasks selected")
     jp = judge_provider or cfg.judge_provider
-    if provider not in FREE_PROVIDERS or (jp is not None and jp not in FREE_PROVIDERS):
-        typer.echo("execution boundary — this run spends tokens on a third-party service:")
-        for k, v in preflight(cfg, tasks, model or provider).items():
-            typer.echo(f"  {k:<24} {v}")
-        if not confirm:
-            _fail("re-run with --confirm to proceed")
+    _paid_gate(cfg, tasks, provider, model, jp, confirm)
     prov = _build(provider, model, tasks)
     judge = _build(jp, judge_model or cfg.judge_model, tasks) if jp else None
     if judge is not None:
@@ -195,17 +218,7 @@ def evaluate_run(
         run_benchmark(cfg, tasks, prov, judge=judge, run_id=label, config_hash=cfg_hash, task_set_hash=digest)
     )
     json_path, md_path = write_report(report, out, cfg)
-    typer.echo(
-        f"ZaraScore {report.zarascore:.4f} (strict {report.zarascore_strict:.4f})"
-        f"{' (partial)' if report.partial else ''}  tasks {report.tasks_run}"
-    )
-    for c in report.categories:
-        typer.echo(
-            f"  {c.name:<22} n={c.n:<4} score={c.score:.3f} pass={c.pass_rate:.3f} judge_skipped={c.judge_skipped}"
-        )
-    if report.failed_gates:
-        typer.secho(f"failed gates: {report.failed_gates}", fg=typer.colors.YELLOW)
-    typer.echo(f"reports: {json_path}  {md_path}")
+    _print_summary(report, json_path, md_path)
 
 
 @evaluate_app.command("compare")

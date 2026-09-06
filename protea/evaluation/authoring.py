@@ -122,7 +122,7 @@ def _spread(items: list[Any], n: int, seed: int, key: str) -> list[Any]:
         groups.setdefault(_family_of(it), []).append(it)
     order = sorted(groups, key=lambda f: _h(f"{key}:{f}", seed))
     for f in order:
-        groups[f].sort(key=lambda it: _h(f"{key}:{f}:{_ident(it)}", seed))
+        groups[f].sort(key=lambda it, f=f: _h(f"{key}:{f}:{_ident(it)}", seed))
     out: list[Any] = []
     while len(out) < n and any(groups.values()):
         for f in order:
@@ -199,7 +199,7 @@ def _base_task(ex: TrainingExample, category: Category, expect: Expect, tags: li
         difficulty=ex.metadata.difficulty,
         tags=tags,
         source=_source(ex),
-        messages=[m for m in ex.messages[:-1]],
+        messages=list(ex.messages[:-1]),
         expect=expect,
         reference=Reference(text=target),
     )

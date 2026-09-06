@@ -73,7 +73,7 @@ def _parse_json(text: str, strict: bool) -> tuple[Any | None, str]:
             return None, f"not bare JSON: {exc.msg}"
     try:
         return extract_json(text), ""
-    except (ValueError, json.JSONDecodeError) as exc:
+    except ValueError as exc:
         return None, f"no JSON object found: {exc}"
 
 
