@@ -9,7 +9,7 @@ The programme was specified under the working name "ZaraLM". Phase 0 discovery i
 | Area | Status |
 |---|---|
 | Phase 0 discovery documents | implemented — `docs/` |
-| CLI: `doctor`, `version`, `roadmap`, `config validate|show`, `providers list|health`, `dataset validate|stats|build|golden-check|synthesize`, `registry datasets|models|promote`, `evaluate tasks|author|seal|verify|run|compare` | implemented |
+| CLI: `doctor`, `version`, `roadmap`, `config validate|show`, `providers list|health`, `dataset validate|stats|build|golden-check|synthesize`, `registry datasets|models|promote`, `evaluate tasks|author|seal|verify|run|compare`, `train local|remote|card|runs|register` | implemented |
 | Generation contract + `ModelProvider` with Anthropic, OpenAI, Google, Azure OpenAI, Ollama, Protea (vLLM) and mock adapters | implemented — Phase 1 (ADR-002) |
 | Training-example schema with provenance envelope and JSONL validation | implemented — Phase 1 (ADR-003) |
 | Dataset and model registries with release lifecycle | implemented — Phase 1 (ADR-004) |
@@ -18,7 +18,7 @@ The programme was specified under the working name "ZaraLM". Phase 0 discovery i
 | Data pipeline: allowlist discovery, classification, secret/PII/brand/contamination scanners, extractors, normalisers, family splits, golden guard, manifests and cards (`dataset build|golden-check`) | implemented — Phase 2 (ADR-006) |
 | Eval-seeded synthetic tool-calling (`dataset synthesize`, gated) | implemented — Phase 2; teacher policy pending |
 | Evaluation framework: task contract, evaluators, LLM judge, runner, reports, release gate + kill criterion; ZaraBench 0.1 sealed (206 tasks, 10 categories) (`evaluate author|seal|verify|run|compare`) | implemented — Phase 3 (ADR-007); base-model and frontier baselines await confirmation |
-| Training (SFT / LoRA / QLoRA, remote GPU) | planned — Phase 4 |
+| Training: config-driven TRL/PEFT trainer (SFT / LoRA / QLoRA), immutable run snapshots, checkpoint/resume, metrics + optional MLflow, model cards, registry entries; remote GPU adapters (SSH, RunPod, Azure Bicep, Kubernetes) with priced dry runs (`train local|remote|card|runs|register`) | implemented — Phase 4 (ADR-008); first QLoRA launch awaits confirmation |
 | Inference (vLLM, OpenAI-compatible) | planned — Phase 5 |
 | Router, fallback, confidence | planned — Phase 7 |
 
@@ -35,7 +35,8 @@ protea/
   registry/              file-backed dataset and model registries
   data_pipeline/         sources, discovery, classify, scanners/, extractors/, normalize/, dedup, splits, build, synthetic
   evaluation/            tasks, driver, evaluators, judge, runner, report, golden, reference, authoring (ZaraBench)
-configs/                 models/, training/, inference/, evaluation/, datasets/ (validated in CI)
+  training/              data rendering, run snapshots, trainer, model card, remote/ (ssh, runpod, azure, kubernetes)
+configs/                 models/, training/, inference/, evaluation/, datasets/, remote/, pricing/ (validated in CI)
 evaluation/              sealed ZaraBench task sets + golden locks, committed baseline reports
 registry/                datasets.json, models.json (source of truth for releases)
 docs/                    Phase 0 documents, ADRs, model selection
@@ -62,6 +63,9 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 protea doctor
 pytest
+# optional, CPU-only training stack for the offline smoke run:
+pip install torch --index-url https://download.pytorch.org/whl/cpu && pip install -e ".[train-cpu]"
+protea train local --config configs/training/ci-smoke.yaml --allow-unregistered
 ```
 
 GPU-only extras (`[train]`, `[serve]`) are installed on the machine that has the GPU, never on the Zara VPS.

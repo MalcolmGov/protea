@@ -1,0 +1,9 @@
+# First QLoRA experiment target (roadmap §4): one A100-80GB on RunPod secure cloud.
+provider: runpod
+gpu: a100-80gb
+gpu_count: 1
+image: ghcr.io/malcolmgov/protea-train:latest
+spot: false
+storage: {kind: s3, uri: s3://protea-runs/agent-training}
+checkpoint_sync_minutes: 10
+runpod: {cloud_type: SECURE, volume_gb: 100, container_disk_gb: 50}

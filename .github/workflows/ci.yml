@@ -24,6 +24,21 @@ jobs:
       - run: protea evaluate verify
       - name: Reference answers must satisfy every evaluator
         run: protea evaluate run --provider reference --out /tmp/zarabench-reports --label ci
+  train-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install -e ".[dev,train-cpu]"
+      - name: Offline trainer smoke (tiny random model, checkpoint, resume, card, register)
+        run: pytest -q tests/test_trainer_smoke.py
+      - name: Remote job plans are dry-run only
+        run: |
+          protea train remote --config configs/training/protea-agent-8b-qlora.yaml --remote configs/remote/runpod-a100.yaml --allow-unregistered --out /tmp/remote-plans
+          protea train remote --config configs/training/protea-agent-8b-qlora.yaml --remote configs/remote/azure-nc24.yaml --allow-unregistered --out /tmp/remote-plans
   secrets:
     runs-on: ubuntu-latest
     steps:

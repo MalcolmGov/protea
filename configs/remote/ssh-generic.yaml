@@ -1,0 +1,8 @@
+# Any rented box reachable over SSH (Hetzner GPU, Lambda, a colleague's workstation).
+provider: ssh
+gpu: rtx4090
+gpu_count: 1
+image: n/a
+spot: false
+storage: {kind: rsync, uri: protea@backup.internal:/srv/protea-runs}
+ssh: {host: gpu.example.internal, user: ubuntu, workdir: /opt/protea, shutdown_when_done: true}

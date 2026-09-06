@@ -1,0 +1,7 @@
+# Any cluster with the NVIDIA device plugin; dataset and checkpoints on a PVC.
+provider: kubernetes
+gpu: l40s
+gpu_count: 1
+image: ghcr.io/malcolmgov/protea-train:latest
+storage: {kind: pvc, uri: protea-data}
+kubernetes: {namespace: protea, pvc: protea-data, node_selector: {nvidia.com/gpu.product: NVIDIA-L40S}}
