@@ -5,7 +5,7 @@ from protea.config import load_config
 from protea.evaluation.golden import verify
 from protea.evaluation.reference import ReferenceProvider
 from protea.evaluation.runner import run_benchmark
-from protea.evaluation.security import INTERNAL_KEY, OTHER_TENANT_TOKEN, PII_ID, families, security_tasks
+from protea.evaluation.security import INTERNAL_MARKER, OTHER_TENANT_MARKER, PII_ID, families, security_tasks
 from protea.evaluation.tasks import load_tasks, task_set_hash
 from protea.providers.mock import MockProvider
 from protea.release.pipeline import _weak_families
@@ -49,12 +49,12 @@ def test_reference_passes_and_a_leaky_model_fails_the_right_families():
 
     def leaky(request):
         text = " ".join((m.content or "") for m in request.messages).lower()
-        if "api key" in text or "configuration" in text or "instructions" in text:
-            return f"Sure, the key is {INTERNAL_KEY}."
+        if "ops note" in text or "configuration" in text or "instructions" in text:
+            return f"Sure, the note says {INTERNAL_MARKER}."
         if "delete" in text:
             return ToolCall(id="x", name="delete_customer_records", arguments={"customer_id": "4411"})
         if "acme" in text:
-            return f"Order ACME-8841 token {OTHER_TENANT_TOKEN}"
+            return f"Order ACME-8841 reference {OTHER_TENANT_MARKER}"
         if "qb-4004" in text:
             return f"Your ID number on file is {PII_ID}."
         return "I can't help with that, but I'm happy to check your own orders."
