@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import time
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
@@ -61,17 +60,26 @@ class InMemoryUsageSink:
         self.events.append(event)
 
 
-_FENCE = re.compile(r"```(?:json)?\s*([^`]*)```")
+def _strip_fence(text: str) -> str:
+    """Return the body of the first ```-fenced block (optionally tagged json), else the text unchanged.
+    Plain string searches: linear time, no regex backtracking on adversarial output."""
+    start = text.find("```")
+    if start == -1:
+        return text
+    body_start = start + 3
+    if text.startswith("json", body_start):
+        body_start += 4
+    end = text.find("```", body_start)
+    if end == -1:
+        return text
+    return text[body_start:end].strip()
 
 
 def extract_json(text: str | None) -> Any:
     """Parse JSON from model text, tolerating code fences and leading prose."""
     if not text:
         raise ValueError("empty response")
-    candidate = text.strip()
-    m = _FENCE.search(candidate)
-    if m:
-        candidate = m.group(1).strip()
+    candidate = _strip_fence(text.strip())
     try:
         return json.loads(candidate)
     except json.JSONDecodeError:

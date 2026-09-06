@@ -62,5 +62,7 @@ async def test_health():
 def test_extract_json_handles_fences_and_prose():
     assert extract_json('```json\n{"a": 1}\n```') == {"a": 1}
     assert extract_json('Sure! {"a": [1, 2]} hope that helps') == {"a": [1, 2]}
+    assert extract_json('Here you go:\n```json\n{"b": true}\n```\nDone.') == {"b": True}
+    assert extract_json('```json\n{"c": 1}') == {"c": 1}  # unterminated fence falls back to brace scan
     with pytest.raises(ValueError):
         extract_json("")
