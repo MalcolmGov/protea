@@ -18,7 +18,7 @@ def _fail(msg: str, code: int = 1) -> None:
     raise typer.Exit(code)
 
 
-def _load_training(config: Path, root: Path):
+def _load_training(config: Path):
     from protea.config import config_hash, load_config
 
     cfg = load_config(config, "training")
@@ -84,7 +84,7 @@ def train_local(
     from protea.training.run import ImmutableConfigError, create_run, find_latest_run, open_run
     from protea.training.trainer import TrainingUnavailable, TrainOptions, adapter_sha256, train
 
-    cfg, cfg_hash = _load_training(config, root)
+    cfg, cfg_hash = _load_training(config)
     train_recs, train_stats, val_recs, val_stats = _records(cfg, root)
     _pin_or_fail(cfg, train_stats, root, allow_unregistered)
     _echo_stats("train", train_stats)
@@ -143,7 +143,7 @@ def train_remote(
     from protea.training.remote import PlanRequest, build_adapter, estimate, load_gpu_catalogue, write_artifacts
     from protea.training.run import new_run_id
 
-    cfg, cfg_hash = _load_training(config, root)
+    cfg, cfg_hash = _load_training(config)
     remote_cfg = load_config(remote, "remote")
     catalogue = load_gpu_catalogue(root / GPU_CATALOGUE)
     if remote_cfg.gpu not in catalogue:

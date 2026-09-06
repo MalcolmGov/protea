@@ -21,6 +21,7 @@ CHATML_TEMPLATE = (
     "{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\\n' }}{% endif %}"
 )
 TINY_RANDOM = "tiny-random"
+UNK_TOKEN = "<unk>"
 
 
 class TrainingUnavailable(RuntimeError):
@@ -51,14 +52,14 @@ def build_tiny_random(records: list[dict[str, Any]], vocab_size: int = 2048):
     from tokenizers import Tokenizer, models, pre_tokenizers, trainers
     from transformers import PreTrainedTokenizerFast, Qwen2Config, Qwen2ForCausalLM
 
-    specials = ["<|endoftext|>", "<|im_start|>", "<|im_end|>", "<unk>"]
-    tok = Tokenizer(models.BPE(unk_token="<unk>"))
+    specials = ["<|endoftext|>", "<|im_start|>", "<|im_end|>", UNK_TOKEN]
+    tok = Tokenizer(models.BPE(unk_token=UNK_TOKEN))
     tok.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
     tok.train_from_iterator(
         (render_chatml(r) for r in records), trainers.BpeTrainer(vocab_size=vocab_size, special_tokens=specials)
     )
     tokenizer = PreTrainedTokenizerFast(
-        tokenizer_object=tok, eos_token="<|im_end|>", pad_token="<|endoftext|>", unk_token="<unk>"
+        tokenizer_object=tok, eos_token="<|im_end|>", pad_token="<|endoftext|>", unk_token=UNK_TOKEN
     )
     tokenizer.chat_template = CHATML_TEMPLATE
     config = Qwen2Config(

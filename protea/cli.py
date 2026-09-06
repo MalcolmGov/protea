@@ -331,3 +331,7 @@ def registry_promote(
         _fail(str(exc))
         return
     typer.echo(f"{entry.key} -> {entry.deployment_status.value}")
+
+
+if __name__ == "__main__":
+    app()

@@ -31,14 +31,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
-      - run: pip install -e ".[dev,train-cpu]"
+      # Pinned, wheels-only install of the verified CPU training stack (requirements/train-cpu.lock).
+      - run: pip install --only-binary :all: --extra-index-url https://download.pytorch.org/whl/cpu -r requirements/train-cpu.lock
       - name: Offline trainer smoke (tiny random model, checkpoint, resume, card, register)
-        run: pytest -q tests/test_trainer_smoke.py
+        run: PYTHONPATH=. pytest -q tests/test_trainer_smoke.py
       - name: Remote job plans are dry-run only
         run: |
-          protea train remote --config configs/training/protea-agent-8b-qlora.yaml --remote configs/remote/runpod-a100.yaml --allow-unregistered --out /tmp/remote-plans
-          protea train remote --config configs/training/protea-agent-8b-qlora.yaml --remote configs/remote/azure-nc24.yaml --allow-unregistered --out /tmp/remote-plans
+          PYTHONPATH=. python -m protea.cli train remote --config configs/training/protea-agent-8b-qlora.yaml --remote configs/remote/runpod-a100.yaml --allow-unregistered --out /tmp/remote-plans
+          PYTHONPATH=. python -m protea.cli train remote --config configs/training/protea-agent-8b-qlora.yaml --remote configs/remote/azure-nc24.yaml --allow-unregistered --out /tmp/remote-plans
   secrets:
     runs-on: ubuntu-latest
     steps:
