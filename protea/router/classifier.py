@@ -41,12 +41,21 @@ def is_financial(request: GenerationRequest) -> bool:
 
 def complexity(prompt_chars: int, tool_count: int, connector_count: int, financial: bool) -> Complexity:
     """Cheap, explainable score: long prompts, many tools/connectors and money push a call up a tier."""
-    score = 0
-    score += 0 if prompt_chars < 4_000 else (1 if prompt_chars < 16_000 else 2)
-    score += 0 if tool_count <= 3 else (1 if tool_count <= 8 else 2)
-    score += 0 if connector_count <= 2 else 1
-    score += 1 if financial else 0
-    return "low" if score == 0 else ("medium" if score <= 2 else "high")
+    score = _tier(prompt_chars, 4_000, 16_000) + _tier(tool_count, 4, 9) + _tier(connector_count, 3, None)
+    if financial:
+        score += 1
+    if score == 0:
+        return "low"
+    return "medium" if score <= 2 else "high"
+
+
+def _tier(value: int, medium_from: int, high_from: int | None) -> int:
+    """0 below `medium_from`, 1 from there, 2 from `high_from` (when given)."""
+    if value < medium_from:
+        return 0
+    if high_from is not None and value >= high_from:
+        return 2
+    return 1
 
 
 def describe(

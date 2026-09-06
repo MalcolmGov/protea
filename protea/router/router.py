@@ -183,7 +183,7 @@ class ModelRouter:
         chosen, reason = self._pinned(req, by_name)
         pinned = chosen is not None
         if chosen is None and eligible:
-            chosen = sorted(eligible, key=_order_key(req.cost_policy, self.policy.fallback_order))[0]
+            chosen = min(eligible, key=_order_key(req.cost_policy, self.policy.fallback_order))
             reason += f"{req.cost_policy} policy: {by_name[chosen.name].reason}"
         if chosen is None:
             chosen, reason = self._default(req, level), reason + "no candidate eligible; default route"

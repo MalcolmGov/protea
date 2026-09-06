@@ -54,6 +54,27 @@ def _tool_existence(request: GenerationRequest, response: GenerationResponse) ->
     )
 
 
+def _gate_value(gate_valid: bool, gate_repairs: int) -> float:
+    if not gate_valid:
+        return 0.0
+    return 1.0 if gate_repairs == 0 else 0.7
+
+
+def _primary_signal(response: GenerationResponse, gate_valid: bool | None, gate_repairs: int) -> ConfidenceSignal:
+    """The gate outcome when there was a gate; otherwise the finish reason and whether anything came back."""
+    if gate_valid is not None:
+        return ConfidenceSignal(
+            name="schema_valid",
+            value=_gate_value(gate_valid, gate_repairs),
+            weight=3.0,
+            detail=f"repairs={gate_repairs}",
+        )
+    if response.finish_reason in ("length", "error", "refusal"):
+        return ConfidenceSignal(name="finish_reason", value=0.2, weight=2.0, detail=response.finish_reason)
+    answered = bool(response.content or response.tool_calls)
+    return ConfidenceSignal(name="finish_reason", value=1.0 if answered else 0.0, weight=1.0)
+
+
 def compute_confidence(
     request: GenerationRequest,
     response: GenerationResponse,
@@ -64,18 +85,7 @@ def compute_confidence(
     history_rate: float | None,
     history_n: int = 0,
 ) -> Confidence:
-    signals: list[ConfidenceSignal] = []
-    if gate_valid is not None:
-        value = 0.0 if not gate_valid else (1.0 if gate_repairs == 0 else 0.7)
-        signals.append(ConfidenceSignal(name="schema_valid", value=value, weight=3.0, detail=f"repairs={gate_repairs}"))
-    elif response.finish_reason in ("length", "error", "refusal"):
-        signals.append(ConfidenceSignal(name="finish_reason", value=0.2, weight=2.0, detail=response.finish_reason))
-    else:
-        signals.append(
-            ConfidenceSignal(
-                name="finish_reason", value=1.0 if (response.content or response.tool_calls) else 0.0, weight=1.0
-            )
-        )
+    signals: list[ConfidenceSignal] = [_primary_signal(response, gate_valid, gate_repairs)]
     tools = _tool_existence(request, response)
     if tools is not None:
         signals.append(tools)
