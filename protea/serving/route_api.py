@@ -86,8 +86,8 @@ async def _run(body: RoutedRequest, request: Request, state: FacadeState, router
     repairs = body.max_repairs if body.max_repairs is not None else state.cfg.max_repairs
     try:
         outcome = await router.execute(gen, route_request=route_req, schema=schema, max_repairs=repairs)
-    except NoRouteError as exc:
-        raise HTTPException(409, str(exc)) from exc
+    except NoRouteError as exc:  # policy refusal: the documented 409, as a response rather than an exception
+        return JSONResponse({"detail": str(exc)}, status_code=409)
     state.metrics.inc("protea_route_total", {"route": outcome.served_route or "none", "ok": str(outcome.ok).lower()})
     if outcome.event.fallbacks:
         state.metrics.inc("protea_route_fallbacks_total", value=len(outcome.event.fallbacks))
