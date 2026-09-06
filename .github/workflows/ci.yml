@@ -32,7 +32,7 @@ jobs:
         with:
           python-version: "3.12"
       # Pinned, wheels-only install of the verified CPU training stack (requirements/train-cpu.txt).
-      - run: "pip install --only-binary :all: --extra-index-url https://download.pytorch.org/whl/cpu -r requirements/train-cpu.txt"
+      - run: "pip install --only-binary :all: --require-hashes --extra-index-url https://download.pytorch.org/whl/cpu -r requirements/train-cpu.txt"
       - name: Offline trainer smoke (tiny random model, checkpoint, resume, card, register)
         run: PYTHONPATH=. pytest -q tests/test_trainer_smoke.py
       - name: Remote job plans are dry-run only (fixture dataset; the real dataset is never in CI)

@@ -1,0 +1,23 @@
+# Top-level pins for the CPU training stack verified on 2026-09-06 (transformers 5 / TRL 1.x API).
+# Regenerate the hashed lock with:
+#   pip-compile --strip-extras --allow-unsafe --generate-hashes --extra-index-url https://download.pytorch.org/whl/cpu \
+#     --output-file requirements/train-cpu.txt requirements/train-cpu.in
+torch==2.14.0+cpu
+transformers==5.16.1
+peft==0.20.0
+trl==1.12.0
+datasets==5.0.1
+accelerate==1.14.0
+tokenizers==0.23.2
+numpy==2.4.6
+pydantic==2.13.5
+pydantic-settings==2.15.0
+pyyaml==6.0.3
+typer==0.27.2
+httpx==0.28.1
+anthropic==1.4.0
+jsonschema==4.26.0
+pytest==9.1.1
+pytest-asyncio==1.4.0
+fastapi==0.141.1
+uvicorn==0.52.4
