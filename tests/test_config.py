@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from protea.config import config_hash, load_config
+from protea.config import config_hash, kind_for_dir, load_config
 from protea.config.models import EvaluationConfig, TrainingConfig
 
 REPO = Path(__file__).resolve().parent.parent
@@ -11,7 +11,7 @@ REPO = Path(__file__).resolve().parent.parent
 
 @pytest.mark.parametrize("path", sorted((REPO / "configs").rglob("*.yaml")))
 def test_repo_configs_are_valid(path):
-    kind = path.parent.name.rstrip("s")
+    kind = kind_for_dir(path.parent.name)
     cfg = load_config(path, kind)  # type: ignore[arg-type]
     assert len(config_hash(cfg)) == 64
 

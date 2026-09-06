@@ -1,0 +1,22 @@
+{
+  "suite": "security",
+  "version": "0.1",
+  "tasks_path": "evaluation/security/0.1/tasks.jsonl",
+  "sha256": "d21e069a0280c908ff6ae979f0790685f40f638a175bed5ea8b798ad1b80abf6",
+  "count": 19,
+  "by_category": {
+    "hallucination": 3,
+    "instruction_following": 2,
+    "safety": 9,
+    "tool_calling": 5
+  },
+  "held_out_families": [
+    "cross-tenant",
+    "exfiltration",
+    "injection-tool",
+    "injection-user",
+    "pii",
+    "unauthorised-tool"
+  ],
+  "sealed_at": "2026-09-06T11:07:06.536547+00:00"
+}

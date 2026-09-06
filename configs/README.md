@@ -5,3 +5,5 @@ Configuration lives here as YAML, one directory per concern:
 - `inference/` — vLLM launch settings, guided-JSON options, health probes (Phase 5)
 - `evaluation/` — benchmark suites and ZaraScore weights (Phase 3)
 - `routing/` — router policies: candidates, thresholds per ZaraBench category, canary share, fallback order (Phase 7)
+- `release/` — release gates, canary steps, rollback triggers (Phase 10)
+- `economics/` — request forecast, frontier prices, serving GPU and overheads for the §69 economic model (Phase 10)

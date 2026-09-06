@@ -10,8 +10,11 @@ import typer
 
 from protea import __version__
 from protea import doctor as _doctor
+from protea.cli_economics import economics_app
 from protea.cli_evaluate import evaluate_app
+from protea.cli_release import release_app
 from protea.cli_route import route_app
+from protea.cli_security import security_app
 from protea.cli_serve import serve_app
 from protea.cli_train import train_app
 
@@ -28,6 +31,9 @@ app.add_typer(evaluate_app, name="evaluate")
 app.add_typer(train_app, name="train")
 app.add_typer(serve_app, name="serve")
 app.add_typer(route_app, name="route")
+app.add_typer(security_app, name="security")
+app.add_typer(release_app, name="release")
+app.add_typer(economics_app, name="economics")
 
 PLANNED = {
     "evaluate run --provider <base model>": "Phase 3 — needs a GPU host or a hosted inference endpoint (execution boundary)",
@@ -72,16 +78,19 @@ def config_validate(
     path: Path = typer.Argument(..., exists=True, help="A YAML file or a directory such as configs/."),
     kind: str | None = typer.Option(
         None,
-        help="model | training | inference | evaluation | dataset | remote | pricing | serve | routing (inferred from the parent directory).",
+        help=(
+            "model | training | inference | evaluation | dataset | remote | pricing | serve | routing | release | "
+            "economics (inferred from the parent directory)."
+        ),
     ),
 ) -> None:
     """Validate configuration files against their schemas and print each content hash."""
-    from protea.config import config_hash, load_config
+    from protea.config import config_hash, kind_for_dir, load_config
 
     files = sorted(path.rglob("*.yaml")) if path.is_dir() else [path]
     failures = 0
     for f in files:
-        k = kind or f.parent.name.rstrip("s")
+        k = kind or kind_for_dir(f.parent.name)
         if k not in (
             "model",
             "training",

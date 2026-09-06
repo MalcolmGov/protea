@@ -11,8 +11,25 @@ from pydantic import BaseModel
 from protea.config.models import CONFIG_TYPES
 from protea.data_pipeline.sources import DatasetBuildConfig
 
-ConfigKind = Literal["model", "training", "inference", "evaluation", "dataset", "remote", "pricing", "serve", "routing"]
+ConfigKind = Literal[
+    "model",
+    "training",
+    "inference",
+    "evaluation",
+    "dataset",
+    "remote",
+    "pricing",
+    "serve",
+    "routing",
+    "release",
+    "economics",
+]
 CONFIG_TYPES = {**CONFIG_TYPES, "dataset": DatasetBuildConfig}
+
+
+def kind_for_dir(name: str) -> str:
+    """Config kind from a `configs/<dir>` name: the kind itself when it is one (`economics`), else the singular."""
+    return name if name in CONFIG_TYPES else name.rstrip("s")
 
 
 def load_config(path: str | Path, kind: ConfigKind) -> BaseModel:

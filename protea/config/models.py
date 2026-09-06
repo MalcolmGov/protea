@@ -289,8 +289,22 @@ def _routing_policy():
     return RoutingPolicy
 
 
+def _release_config():
+    from protea.release.config import ReleaseConfig
+
+    return ReleaseConfig
+
+
+def _economics_config():
+    from protea.economics import EconomicsConfig
+
+    return EconomicsConfig
+
+
 CONFIG_TYPES["serve"] = _serve_config()
 CONFIG_TYPES["routing"] = _routing_policy()
+CONFIG_TYPES["release"] = _release_config()
+CONFIG_TYPES["economics"] = _economics_config()
 
 
 def as_dict(cfg: BaseModel) -> dict[str, Any]:
