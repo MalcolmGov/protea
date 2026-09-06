@@ -1,0 +1,1 @@
+Delivery R60. Free over R750.

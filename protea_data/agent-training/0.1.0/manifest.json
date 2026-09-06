@@ -1,0 +1,233 @@
+{
+  "created_at": "2026-09-06T07:43:35.295375+00:00",
+  "files": {
+    "golden": {
+      "examples": 52,
+      "path": "golden.jsonl",
+      "sha256": "6b5f3f66a405c62c61d78200c640f8c0b7794bc9ff5f320ac83e3a8c12ed6091"
+    },
+    "test": {
+      "examples": 86,
+      "path": "test.jsonl",
+      "sha256": "675b15ba917df244631a3b051485d1da98a37402e6605caffbd8cc0b7f9a3775"
+    },
+    "train": {
+      "examples": 1214,
+      "path": "train.jsonl",
+      "sha256": "5842ee09460a71c021b6c2dcda3aa659a030b1692f258f3ddb055f9d813cdcb1"
+    },
+    "validation": {
+      "examples": 89,
+      "path": "validation.jsonl",
+      "sha256": "570da596434dc61c6cbed4c98456a0fa00d9675e183cf9ec150fb21e1510a21b"
+    }
+  },
+  "golden_ids": [
+    "16f0a1cc-26d8-4a72-9cc5-74a6ced36bfe",
+    "85df1bc6-ddbd-41f8-940d-18951c011abb",
+    "bad79c04-48b6-4933-b462-bf54cb4454c2",
+    "57b7d77b-d32a-4b94-87f8-58683069ffac",
+    "707bbec9-cbbb-432f-ac77-53f65a35c08f",
+    "d521d03b-67a8-4b0f-a550-4638c0e913f7",
+    "e5849160-bb64-4941-987f-691b31d9d45a",
+    "665e1624-4b78-470e-b22e-2050af5419e7",
+    "afa78c21-c410-429b-9c92-6b3d9cd7bf41",
+    "e52d0d24-be37-490a-8e3d-1e2c1f9b43f7",
+    "7b08fb87-3532-4584-8ffc-c93bcaf04345",
+    "3fad8497-03b4-4a34-84c7-db5028fade85",
+    "e8b637b8-8667-483c-aea7-1030c202cc17",
+    "2be661f9-7c86-4a6c-848e-937902849e0e",
+    "498b40d9-95a5-4619-b623-b23497b7611c",
+    "1de3aa57-7903-49af-8df5-e4dc7d0b41fc",
+    "a433e071-c098-41a3-9c6f-70352e679bc3",
+    "667f5e7b-5646-40ef-b823-b79fbc3705ba",
+    "9830b16e-97ab-45b7-84b2-5aca56731a5c",
+    "7967c0ea-7b79-4cb7-9c2c-480082592801",
+    "357a3fd5-1e25-49d5-a872-b3c4fb79d346",
+    "5a6a7720-0b87-4f60-baa9-00c656d10cae",
+    "07f8f3cd-23c7-46bf-9691-c7653ab091af",
+    "78aaf5b2-9b36-4c54-a73a-01c56edb7151",
+    "ac357410-7dbe-422d-bb35-adb0c855e3a5",
+    "b8f3fa24-0ed3-41d6-a1c7-f3d3019f8abc",
+    "3b3fcfeb-2565-4852-82f9-196deaeefe8e",
+    "00b8bffe-bf05-48c8-9449-e4ad4ecdfbe2",
+    "0ff66d18-a41f-4b05-980d-e469f579cd48",
+    "3451f6c2-d979-495f-807a-1447936862a5",
+    "312e4e59-a1c8-4730-b3d3-e7fc03f8bcd7",
+    "3fbb9a67-78ba-40fc-a125-47775bb0cc5b",
+    "74d1da32-a9cb-4785-a0a4-abedb7e8d963",
+    "94588106-7552-457d-ae92-3f4bb0f5f668",
+    "ae60900d-43ae-4a09-9bdb-1d0029e89fc5",
+    "e7d21184-3119-4038-b644-b35c01e5d788",
+    "c25980e2-d8ba-4601-96c3-546e7a1614ef",
+    "9c4e0768-7ee7-4a35-85cb-90641945df90",
+    "61ad7271-a52b-4036-ab24-34b0697fd98b",
+    "70871b7d-20fa-4b10-8a81-031463f4dedb",
+    "90ea34e3-5b6b-4c40-8c6c-494b4785a3a0",
+    "992566a2-4074-4931-851a-21f4f7f1d36b",
+    "42eacc65-65a3-4980-9469-b434e6467a3a",
+    "deeec579-70d8-4179-babc-b7bef365b12b",
+    "dcf6bbd0-bdf3-40f7-a50a-c332cf7c7ef0",
+    "0061c47c-d698-4e60-ad1c-d1cf70b2c318",
+    "96e785b9-2aa5-4ef1-ae75-7df920516ab5",
+    "1c834ca3-ef0d-49a8-81c8-4ef944c63f32",
+    "79cc9339-af68-43b9-895e-c0033ac6974d",
+    "0e32c910-5e23-4a46-a501-238a8e72ae30",
+    "8f5a9f08-69a6-47f2-96a4-68de7ce600ef",
+    "140a32f0-12b2-44ae-a583-4973367d1283"
+  ],
+  "name": "agent-training",
+  "report": {
+    "approx_tokens": 3123962,
+    "artifacts": 579,
+    "classification": {
+      "evals:REQUIRES_REVIEW": 504,
+      "evals:SAFE_FOR_TRAINING": 69,
+      "guardrails:SAFE_FOR_TRAINING": 573,
+      "knowledge:RAG_ONLY": 573,
+      "manifest:SAFE_FOR_TRAINING": 573,
+      "system_prompt:SAFE_FOR_TRAINING": 573,
+      "tools:SAFE_FOR_TRAINING": 573
+    },
+    "dataset": "agent-training-0.1.0",
+    "domains": 14,
+    "dry_run": false,
+    "duplicates": 600,
+    "examples_by_split": {
+      "golden": 52,
+      "test": 134,
+      "train": 1740,
+      "validation": 115
+    },
+    "examples_by_task": {
+      "agent_generation": 573,
+      "connector_selection": 551,
+      "routing": 329,
+      "structured_output": 588
+    },
+    "families": 232,
+    "golden": 52,
+    "languages": {
+      "en": 1712,
+      "en-ZA": 329
+    },
+    "output_dir": null,
+    "packages": 573,
+    "packages_by_source": {
+      "aria": 504,
+      "miai-agents": 69
+    },
+    "pii_findings": 603,
+    "redactions": {
+      "address": 128,
+      "card": 1,
+      "email": 73,
+      "phone": 401
+    },
+    "rejected": [
+      {
+        "artifact": "data/agents/africa-accounting-practice.agent.json#onboarding-executes",
+        "reason": "missing expect"
+      },
+      {
+        "artifact": "data/agents/africa-front-desk.agent.json#route-to-department",
+        "reason": "missing expect"
+      },
+      {
+        "artifact": "data/agents/africa-loyalty-rewards.agent.json#tier-benefits-happy",
+        "reason": "missing expect"
+      },
+      {
+        "artifact": "data/agents/asia-accounting-practice.agent.json#onboarding-executes",
+        "reason": "missing expect"
+      },
+      {
+        "artifact": "data/agents/asia-front-desk.agent.json#route-to-department",
+        "reason": "missing expect"
+      },
+      {
+        "artifact": "data/agents/asia-loyalty-rewards.agent.json#tier-benefits-happy",
+        "reason": "missing expect"
+      },
+      {
+        "artifact": "data/agents/eu-accounting-practice.agent.json#onboarding-executes",
+        "reason": "missing expect"
+      },
+      {
+        "artifact": "data/agents/eu-front-desk.agent.json#route-to-department",
+        "reason": "missing expect"
+      },
+      {
+        "artifact": "data/agents/eu-loyalty-rewards.agent.json#tier-benefits-happy",
+        "reason": "missing expect"
+      },
+      {
+        "artifact": "data/agents/oceania-accounting-practice.agent.json#onboarding-executes",
+        "reason": "missing expect"
+      },
+      {
+        "artifact": "data/agents/oceania-front-desk.agent.json#route-to-department",
+        "reason": "missing expect"
+      },
+      {
+        "artifact": "data/agents/oceania-loyalty-rewards.agent.json#tier-benefits-happy",
+        "reason": "missing expect"
+      },
+      {
+        "artifact": "data/agents/us-accounting-practice.agent.json#onboarding-executes",
+        "reason": "missing expect"
+      },
+      {
+        "artifact": "data/agents/us-front-desk.agent.json#route-to-department",
+        "reason": "missing expect"
+      },
+      {
+        "artifact": "data/agents/us-loyalty-rewards.agent.json#tier-benefits-happy",
+        "reason": "missing expect"
+      }
+    ],
+    "scrubbed": 0,
+    "secret_findings": 0,
+    "seeds": 8782,
+    "seeds_contaminated": 224,
+    "seeds_rejected": 15,
+    "sources": [
+      {
+        "commit": "c22c31b44b731964f685ab2b68660d9fe0b2b672",
+        "exists": true,
+        "name": "aria",
+        "repo": "MalcolmGov/aria",
+        "root": "/home/user/aria"
+      },
+      {
+        "commit": "9f29405dfd2717c9477e078a389f45eaa297e56b",
+        "exists": true,
+        "name": "miai-agents",
+        "repo": "MalcolmGov/miai-agents",
+        "root": "/home/user/miai-agents"
+      }
+    ]
+  },
+  "seeds": {
+    "contaminated": 224,
+    "count": 8782,
+    "path": "seeds/tool_calling_seeds.jsonl"
+  },
+  "sources": [
+    {
+      "commit": "c22c31b44b731964f685ab2b68660d9fe0b2b672",
+      "exists": true,
+      "name": "aria",
+      "repo": "MalcolmGov/aria",
+      "root": "/home/user/aria"
+    },
+    {
+      "commit": "9f29405dfd2717c9477e078a389f45eaa297e56b",
+      "exists": true,
+      "name": "miai-agents",
+      "repo": "MalcolmGov/miai-agents",
+      "root": "/home/user/miai-agents"
+    }
+  ],
+  "version": "0.1.0"
+}

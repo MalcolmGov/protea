@@ -10,6 +10,8 @@ Protea is Moove Digital's proprietary model platform. It began as "ZaraLM" in th
 | `implementation-roadmap.md` | Data opportunity, readiness, phases, execution boundaries |
 | `strategy-review.md` | Corrections and additions to the original specification |
 | `model-selection.md` | Base-model candidates, scoring matrix, ranked recommendation (desk assessment until ZaraBench) |
-| `adr/` | Architecture decision records (001 repository split, 002 provider abstraction, 003 dataset format, 004 registries, 005 configuration) |
+| `dataset-design.md` | Recipes, provenance fields, splits, redaction policy, outputs |
+| `data-governance.md` | Lanes, teacher-model policy, consent plumbing, retention |
+| `adr/` | Architecture decision records (001 repository split, 002 provider abstraction, 003 dataset format, 004 registries, 005 configuration, 006 data pipeline) |
 
-Planned (per the specification): `data-governance.md`, `dataset-design.md`, `training.md`, `evaluation.md`, `inference.md`, `routing.md`, `security.md`, `deployment.md`, `operations.md`.
+Planned (per the specification): `training.md`, `evaluation.md`, `inference.md`, `routing.md`, `security.md`, `deployment.md`, `operations.md`.

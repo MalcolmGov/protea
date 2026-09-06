@@ -1,0 +1,36 @@
+name: fixture-training
+version: 0.0.1
+output_dir: build/fixture
+split_seed: 7
+sources:
+  - name: aria
+    repo: MalcolmGov/aria
+    root: tests/fixtures/sources/aria
+    commit: fixture-aria-0001
+    license_status: approved
+    authored: false
+    extractors:
+      - {kind: agent_package_json, glob: "data/agents/*.agent.json"}
+      - {kind: presets_ts, path: agent_runtime/packages/presets/src/generated-presets.ts}
+      - {kind: python_registry, path: embed/connectors_v2.py, variable: CONNECTORS_CATALOG, entity: connector}
+      - {kind: routing_corpus, path: tests/routing/corpus.py, variable: CORPUS}
+      - {kind: flagship_specs, path: embed/flagship_agents.py, variable: FLAGSHIP_AGENTS}
+  - name: miai
+    repo: MalcolmGov/miai-agents
+    root: tests/fixtures/sources/miai
+    commit: fixture-miai-0001
+    license_status: approved
+    authored: true
+    extractors:
+      - {kind: agent_package_dir, glob: "agents/*/manifest.json"}
+  - name: missing
+    repo: example/missing
+    root: tests/fixtures/sources/does-not-exist
+    license_status: approved
+    extractors:
+      - {kind: agent_package_json, glob: "*.json"}
+splits: {train: 0.6, validation: 0.2, test: 0.2}
+golden: {per_task_type: 1, seed: 1}
+scrub:
+  brand_rules_path: "aria:scripts/marketplace/brand_scrub.json"
+  pii_mode: synthetic

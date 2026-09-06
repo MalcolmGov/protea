@@ -64,7 +64,7 @@ def roadmap() -> None:
 def config_validate(
     path: Path = typer.Argument(..., exists=True, help="A YAML file or a directory such as configs/."),
     kind: str | None = typer.Option(
-        None, help="model | training | inference | evaluation (inferred from the parent directory)."
+        None, help="model | training | inference | evaluation | dataset (inferred from the parent directory)."
     ),
 ) -> None:
     """Validate configuration files against their schemas and print each content hash."""
@@ -74,7 +74,7 @@ def config_validate(
     failures = 0
     for f in files:
         k = kind or f.parent.name.rstrip("s")
-        if k not in ("model", "training", "inference", "evaluation"):
+        if k not in ("model", "training", "inference", "evaluation", "dataset"):
             typer.echo(f"skip  {f} (unknown kind {k!r})")
             continue
         try:
@@ -168,9 +168,104 @@ def dataset_stats(path: Path = typer.Argument(..., exists=True)) -> None:
 
 
 @dataset_app.command("build")
-def dataset_build() -> None:
-    """Planned (Phase 2). Not implemented — this command does nothing yet."""
-    _fail("dataset build is planned for Phase 2 (extractors, classifiers, scanners, dedup). Nothing built.", 2)
+def dataset_build(
+    config: Path = typer.Option(
+        Path("configs/datasets/agent-training-0.1.yaml"), exists=True, help="Dataset build config."
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Discover, classify and count without writing anything."),
+    root: Path = typer.Option(Path("."), help="Protea repository root (output and registry are relative to it)."),
+) -> None:
+    """Build a dataset from pinned local sources: discover → classify → scan → extract → normalise → dedup → split."""
+    import yaml
+
+    from protea.data_pipeline.build import build_dataset
+    from protea.data_pipeline.sources import DatasetBuildConfig
+
+    cfg = DatasetBuildConfig.model_validate(yaml.safe_load(config.read_text(encoding="utf-8")))
+    report = build_dataset(cfg, root.resolve(), dry_run=dry_run)
+    for line in report.summary_lines():
+        typer.echo(line)
+    missing = [s["name"] for s in report.sources if not s["exists"]]
+    if missing:
+        typer.secho(f"sources not found locally: {missing} (set PROTEA_SOURCE_<NAME>)", fg=typer.colors.YELLOW)
+    if report.output_dir:
+        typer.echo(f"written to     {report.output_dir}")
+    if report.rejected:
+        for r in report.rejected[:10]:
+            typer.secho(f"  rejected {r['artifact']}: {r['reason']}", fg=typer.colors.YELLOW)
+
+
+@dataset_app.command("golden-check")
+def dataset_golden_check(
+    train: Path = typer.Argument(..., exists=True), golden: Path = typer.Argument(..., exists=True)
+) -> None:
+    """Fail if any golden example id or family appears in a training file (spec §25)."""
+    from protea.data_pipeline.splits import golden_leak
+    from protea.schemas.examples import TrainingExample, iter_examples
+
+    def load(p: Path) -> tuple[set[str], set[str]]:
+        ids, fams = set(), set()
+        for _, line in iter_examples(p):
+            ex = TrainingExample.model_validate_json(line)
+            ids.add(ex.metadata.id)
+            if ex.metadata.family:
+                fams.add(f"{ex.metadata.task_type.value}:{ex.metadata.family}")
+        return ids, fams
+
+    t_ids, t_fams = load(train)
+    g_ids, g_fams = load(golden)
+    problems = golden_leak(t_ids, g_ids, t_fams, g_fams)
+    if problems:
+        _fail("golden leak: " + "; ".join(problems))
+    typer.echo(f"ok: {len(g_ids)} golden examples, none present in {train}")
+
+
+@dataset_app.command("synthesize")
+def dataset_synthesize(
+    seeds: Path = typer.Argument(..., exists=True, help="tool_calling_seeds.jsonl from `dataset build`"),
+    provider: str = typer.Option("mock", help="Provider name; anything other than mock spends tokens."),
+    model: str | None = typer.Option(None),
+    limit: int = typer.Option(20, help="Maximum seeds to process."),
+    out: Path = typer.Option(Path("synthetic_tool_calling.jsonl")),
+    confirm: bool = typer.Option(False, "--confirm", help="Required for non-mock providers."),
+    include_contaminated: bool = typer.Option(False, help="Also process seeds flagged by the contamination check."),
+) -> None:
+    """Complete eval-seeded tool-calling turns with a teacher model and keep only completions that satisfy the eval expectations."""
+    from protea.data_pipeline.normalize.packages import ToolCallingSeed
+    from protea.data_pipeline.synthetic import synthesize
+    from protea.providers import ProviderNotConfigured, build_provider
+    from protea.schemas.examples import iter_examples
+
+    if provider != "mock" and not confirm:
+        _fail(
+            "Refusing to call a paid provider without --confirm. Note: outputs of Anthropic/OpenAI/Google models are subject to "
+            "terms that restrict training competing models (strategy-review C3); prefer an open-weight teacher and record the policy decision."
+        )
+    try:
+        prov = build_provider(provider, model=model)
+    except ProviderNotConfigured as exc:
+        _fail(str(exc))
+        return
+    items = []
+    for _, line in iter_examples(seeds):
+        s = ToolCallingSeed.model_validate_json(line)
+        if s.contaminated and not include_contaminated:
+            continue
+        items.append(s)
+        if len(items) >= limit:
+            break
+
+    async def run() -> list:
+        return [await synthesize(s, prov, dataset_version="0.1.0-synthetic") for s in items]
+
+    results = asyncio.run(run())
+    ok = [r for r in results if r.ok]
+    with out.open("w", encoding="utf-8") as fh:
+        for r in ok:
+            fh.write(r.example.model_dump_json() + "\n")  # type: ignore[union-attr]
+    typer.echo(f"seeds {len(items)}  accepted {len(ok)}  rejected {len(results) - len(ok)}  -> {out}")
+    for r in [r for r in results if not r.ok][:10]:
+        typer.secho(f"  {r.seed_id}: {'; '.join(r.problems)}", fg=typer.colors.YELLOW)
 
 
 # ---- registry -----------------------------------------------------------------------------------

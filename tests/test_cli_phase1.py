@@ -54,12 +54,6 @@ def test_dataset_validate_and_stats(tmp_path, tool_example):
     assert "tool_calling=1" in stats.output
 
 
-def test_dataset_build_is_explicitly_planned():
-    result = runner.invoke(app, ["dataset", "build"])
-    assert result.exit_code == 2
-    assert "planned" in result.output.lower()
-
-
 def test_registry_commands(tmp_path, monkeypatch):
     monkeypatch.setenv("PROTEA_REGISTRY_DIR", str(tmp_path))
     from protea.config import get_settings

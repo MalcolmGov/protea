@@ -1,0 +1,103 @@
+{
+ "format": "zara.agent-package/v1",
+ "manifest": {
+  "id": "eu-pharmacy",
+  "name": "Pharmacy Desk",
+  "version": "1.0.0",
+  "category": "vertical",
+  "tier": "standard",
+  "market": "eu",
+  "compliance": [],
+  "summary": "Answers pharmacy questions.",
+  "channels": [
+   "whatsapp",
+   "web"
+  ],
+  "languages": [
+   "en"
+  ],
+  "model": {
+   "primary": "claude-sonnet",
+   "fallback": "gpt-4o-mini",
+   "temperature": 0.3,
+   "max_output_tokens": 600
+  },
+  "handoff": {
+   "enabled": true,
+   "triggers": [
+    "complaint",
+    "explicit_request"
+   ]
+  }
+ },
+ "system_prompt": "You are the booking assistant for {business_name}. Capture the service, day, time, name and phone number. Never guarantee a slot.",
+ "knowledge": "Services: cut R120, colour R450. Open Mon-Sat 08:00-18:00. Call us on 082 555 1234.\nplease check what is available before booking; we will check availability first\n",
+ "tools": [
+  {
+   "name": "list_services",
+   "description": "List services with prices.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "category": {
+      "type": "string"
+     }
+    }
+   },
+   "side_effects": "read-only"
+  },
+  {
+   "name": "check_availability",
+   "description": "Check open slots.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "day": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "day"
+    ]
+   },
+   "side_effects": "read-only"
+  },
+  {
+   "name": "handoff_to_human",
+   "description": "Hand off.",
+   "parameters": {
+    "type": "object",
+    "properties": {}
+   },
+   "side_effects": "write"
+  }
+ ],
+ "guardrails": "Never request passwords, PINs or OTPs. Escalate complaints to a human. Contact our desk on 071 234 5678 or desk@salon.example.com for disputes.",
+ "evals": [
+  {
+   "id": "e1",
+   "channel": "web",
+   "lang": "en",
+   "input": "please check what is available before booking",
+   "expect": {
+    "tool": "check_availability",
+    "says_any": [
+     "please check what is available before booking",
+     "we will check availability first"
+    ]
+   }
+  },
+  {
+   "id": "e2",
+   "channel": "web",
+   "lang": "en",
+   "input": "hours?",
+   "expect": {
+    "no_tool": true,
+    "says_any": [
+     "08:00"
+    ]
+   }
+  }
+ ]
+}

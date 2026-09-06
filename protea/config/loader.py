@@ -9,8 +9,10 @@ import yaml
 from pydantic import BaseModel
 
 from protea.config.models import CONFIG_TYPES
+from protea.data_pipeline.sources import DatasetBuildConfig
 
-ConfigKind = Literal["model", "training", "inference", "evaluation"]
+ConfigKind = Literal["model", "training", "inference", "evaluation", "dataset"]
+CONFIG_TYPES = {**CONFIG_TYPES, "dataset": DatasetBuildConfig}
 
 
 def load_config(path: str | Path, kind: ConfigKind) -> BaseModel:

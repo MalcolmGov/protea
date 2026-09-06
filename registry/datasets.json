@@ -1,1 +1,37 @@
-[]
+[
+  {
+    "card_path": "protea_data/agent-training/0.1.0/DATASET_CARD.md",
+    "created_at": "2026-09-06T07:40:18.480589Z",
+    "generator_models": [],
+    "golden": false,
+    "name": "agent-training",
+    "path": "protea_data/agent-training/0.1.0/train.jsonl",
+    "sha256": "0cfbede77836182e8005265229037331270aa85868864d135aafe881c8692d5e",
+    "sources": [
+      {
+        "commit": "c22c31b44b731964f685ab2b68660d9fe0b2b672",
+        "paths": [],
+        "repo": "MalcolmGov/aria"
+      },
+      {
+        "commit": "9f29405dfd2717c9477e078a389f45eaa297e56b",
+        "paths": [],
+        "repo": "MalcolmGov/miai-agents"
+      }
+    ],
+    "splits": {
+      "golden": 52,
+      "test": 86,
+      "train": 1214,
+      "validation": 89
+    },
+    "status": "draft",
+    "task_types": [
+      "agent_generation",
+      "connector_selection",
+      "routing",
+      "structured_output"
+    ],
+    "version": "0.1.0"
+  }
+]
