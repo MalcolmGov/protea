@@ -1,6 +1,6 @@
 # Dataset card — agent-training-0.1.0
 
-**Created:** 2026-09-06T07:43:35.295375+00:00  
+**Created:** 2026-09-06T07:52:05.652276+00:00  
 **Purpose:** supervised fine-tuning data for Protea agent models (agent generation, structured output, connector selection, routing) and validated seeds for eval-checked synthetic tool-calling data.
 
 ## Sources (pinned)
@@ -17,7 +17,7 @@ All sources are Moove Digital-authored artefacts with licence status recorded pe
 ## Handling
 
 - Secret scan: 0 findings (any finding blocks the artefact)
-- PII: 603 findings, redaction mode `synthetic`, redactions {'phone': 401, 'address': 128, 'email': 73, 'card': 1}
+- PII: 613 findings, redaction mode `synthetic`, redactions {'phone': 411, 'address': 136, 'email': 73, 'card': 1}
 - Brand/infrastructure scrub replacements: 0
 - Knowledge fields are RAG-only and never appear in targets; catalogue evals are review-lane (contaminated seeds: 224)
 - Near-duplicate targets removed: 600; splits are assigned per family so market variants never straddle splits
@@ -28,8 +28,8 @@ All sources are Moove Digital-authored artefacts with licence status recorded pe
 |---|---|---|
 | train | 1214 | 2330737 |
 | validation | 89 | 165390 |
-| test | 86 | 181115 |
-| golden | 52 | 79479 |
+| test | 86 | 182310 |
+| golden | 52 | 78284 |
 
 Task types: {'routing': 329, 'structured_output': 588, 'agent_generation': 573, 'connector_selection': 551}  
 Languages: {'en-ZA': 329, 'en': 1712}  
