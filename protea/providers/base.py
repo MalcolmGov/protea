@@ -191,6 +191,7 @@ class ModelProvider(ABC):
             cache_read_tokens=response.usage.cache_read_tokens if response else 0,
             latency_ms=response.latency_ms if response else latency_ms,
             finish_reason=response.finish_reason if response else "error",
+            fallback=meta.fallback,
             error=error,
         )
         try:

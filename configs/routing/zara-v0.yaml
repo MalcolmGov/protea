@@ -1,0 +1,51 @@
+# Routing policy for Zara (kind: routing). The router never invents a candidate: only routes listed here can serve.
+# Protea routes are benchmark-gated: they serve a task type only when a committed ZaraBench report in
+# `reports_dir` scores the category at or above its threshold, and only for tenants inside the canary share.
+name: zara
+version: "0.1"
+reports_dir: evaluation/reports
+
+candidates:
+  - name: protea-agent            # the fine-tuned model behind the Protea facade (self-hosted)
+    provider: protea
+    model: protea-agent
+    self_hosted: true
+    cost_tier: 0
+    quality_tier: 3
+    requires_benchmark: true
+    task_types: [agent_generation, workflow_generation, tool_calling, connector_selection, structured_output, repair, routing]
+    version: "0.1"
+  - name: frontier-sonnet          # balanced frontier route
+    provider: anthropic
+    model: claude-sonnet-5
+    cost_tier: 3
+    quality_tier: 4
+  - name: frontier-opus            # best quality; business reasoning, high complexity, financial flows
+    provider: anthropic
+    model: claude-opus-5
+    cost_tier: 5
+    quality_tier: 5
+  - name: frontier-openai          # cross-vendor fallback so one provider outage never stalls the platform
+    provider: openai
+    model: gpt-5-mini
+    cost_tier: 2
+    quality_tier: 3
+    max_complexity: medium
+
+default_route: frontier-sonnet
+fallback_order: [frontier-sonnet, frontier-opus, frontier-openai]
+
+# ZaraBench category -> minimum score before a benchmark-gated route may serve it (0–1).
+default_threshold: 0.75
+thresholds:
+  tool_calling: 0.80
+  structured_output: 0.85
+  connector_selection: 0.80
+  agent_generation: 0.75
+  workflow_generation: 0.75
+  business_reasoning: 0.90   # Protea does not declare this task type; the threshold documents the bar
+
+canary_percent: 0             # raise in steps (5 → 25 → 100) once a Protea report clears the thresholds
+min_confidence: 0.6
+max_attempts: 3
+latency_budget_ms: 20000

@@ -20,7 +20,7 @@ The programme was specified under the working name "ZaraLM". Phase 0 discovery i
 | Evaluation framework: task contract, evaluators, LLM judge, runner, reports, release gate + kill criterion; ZaraBench 0.1 sealed (206 tasks, 10 categories) (`evaluate author|seal|verify|run|compare`) | implemented — Phase 3 (ADR-007); base-model and frontier baselines await confirmation |
 | Training: config-driven TRL/PEFT trainer (SFT / LoRA / QLoRA), immutable run snapshots, checkpoint/resume, metrics + optional MLflow, model cards, registry entries; remote GPU adapters (SSH, RunPod, Azure Bicep, Kubernetes) with priced dry runs (`train local|remote|card|runs|register`) | implemented — Phase 4 (ADR-008); first QLoRA launch awaits confirmation |
 | Inference: vLLM engine container rendered from config, CPU facade (OpenAI-compatible + native contract, validation gate with repair, bearer auth, `/healthz` `/readyz` `/metrics`, graceful drain), storage helper, compose (`serve facade|vllm`, `protea-storage`) | implemented — Phase 5 (ADR-009); starting the engine needs a GPU host |
-| Router, fallback, confidence | planned — Phase 7 |
+| Router: routing policy (kind `routing`), task classifier + complexity estimator, capability matrix from ZaraBench reports, benchmark-gated Protea eligibility, tenant canary, privacy/cost policies, per-agent pinning, validated fallback chain, evidence-based confidence, route/fallback events; facade `/v1/route/*` (`route explain|matrix`) | implemented — Phase 7 (ADR-010); Protea routes stay off until a committed report clears the thresholds |
 
 Nothing in this repository starts paid infrastructure, downloads large models or trains anything. Those steps are explicit, confirmed actions when they arrive.
 

@@ -109,7 +109,7 @@ Each phase begins with inspect → findings → ADR → file list → incrementa
 3. Replace `agent_builder_v2` keyword path behind a flag; keep `dependencies`/`dna`/`requirements` deterministic stages.
 4. Completeness engine extension (§30) and `can_generate` logic.
 
-### Phase 7 — Model Router
+### Phase 7 — Model Router (implemented, ADR-010)
 Task classifier (routing corpus + task types), complexity estimator, privacy/cost policies, capability matrix from ZaraBench reports, fallback with validation, confidence engine, version pinning, fallback-event recording.
 
 ### Phase 8 — Voice Copilot

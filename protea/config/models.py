@@ -283,7 +283,14 @@ def _serve_config():
     return ServeConfig
 
 
+def _routing_policy():
+    from protea.router.policy import RoutingPolicy
+
+    return RoutingPolicy
+
+
 CONFIG_TYPES["serve"] = _serve_config()
+CONFIG_TYPES["routing"] = _routing_policy()
 
 
 def as_dict(cfg: BaseModel) -> dict[str, Any]:

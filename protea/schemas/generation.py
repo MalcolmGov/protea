@@ -38,6 +38,7 @@ class RequestMeta(BaseModel):
     agent_id: str | None = None
     task_type: str | None = None
     channel: str = "protea"
+    fallback: bool = False  # set by the router when this call is a fallback attempt
 
 
 class GenerationRequest(BaseModel):
