@@ -1,0 +1,17 @@
+# Protea inference facade: OpenAI-compatible gateway + validation gate + health/readiness/metrics. CPU only.
+# Build:  docker build -f deployment/protea/Dockerfile.facade -t ghcr.io/malcolmgov/protea-facade:latest .
+FROM python:3.12-slim
+ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 PYTHONPATH=/app
+WORKDIR /app
+# Hash-pinned, wheels-only dependencies; the package itself is used from source via PYTHONPATH.
+COPY requirements/serve.txt ./requirements/serve.txt
+RUN pip install --only-binary :all: --require-hashes -r requirements/serve.txt \
+ && useradd --create-home --uid 10001 protea
+COPY protea ./protea
+COPY configs ./configs
+USER protea
+EXPOSE 8080
+HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \
+  CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8080/readyz', timeout=2).status==200 else 1)"
+STOPSIGNAL SIGTERM
+CMD ["python", "-m", "protea.cli", "serve", "facade", "--config", "configs/serve/facade.yaml"]

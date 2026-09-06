@@ -1,0 +1,33 @@
+# GPU host: vLLM engine + CPU facade. `docker compose -f deployment/protea/docker-compose.yml up`.
+services:
+  infer:
+    build: {context: ../.., dockerfile: deployment/protea/Dockerfile.infer}
+    image: ghcr.io/malcolmgov/protea-infer:latest
+    environment:
+      PROTEA_INFERENCE_CONFIG: /app/configs/inference/vllm-qwen3-8b.yaml
+      PROTEA_INFERENCE_TOKEN: ${PROTEA_INFERENCE_TOKEN:?set a token for the engine}
+      PROTEA_ADAPTER_PATH: ${PROTEA_ADAPTER_PATH:-}
+      HF_TOKEN: ${HF_TOKEN:-}
+    volumes:
+      - hf-cache:/data/hf
+      - ${PROTEA_ADAPTERS_DIR:-./adapters}:/adapters:ro
+    deploy:
+      resources:
+        reservations:
+          devices: [{driver: nvidia, count: 1, capabilities: [gpu]}]
+    stop_grace_period: 60s
+    ports: ["127.0.0.1:8000:8000"]
+  facade:
+    build: {context: ../.., dockerfile: deployment/protea/Dockerfile.facade}
+    image: ghcr.io/malcolmgov/protea-facade:latest
+    depends_on:
+      infer: {condition: service_healthy}
+    environment:
+      PROTEA_INFERENCE_URL: http://infer:8000/v1
+      PROTEA_INFERENCE_TOKEN: ${PROTEA_INFERENCE_TOKEN}
+      PROTEA_INFERENCE_MODEL: protea-agent
+      PROTEA_FACADE_TOKEN: ${PROTEA_FACADE_TOKEN:?set the token callers must present}
+    ports: ["8080:8080"]
+    stop_grace_period: 40s
+volumes:
+  hf-cache: {}

@@ -277,5 +277,14 @@ CONFIG_TYPES: dict[str, type[BaseModel]] = {
 }
 
 
+def _serve_config():
+    from protea.serving.config import ServeConfig
+
+    return ServeConfig
+
+
+CONFIG_TYPES["serve"] = _serve_config()
+
+
 def as_dict(cfg: BaseModel) -> dict[str, Any]:
     return cfg.model_dump(mode="json")

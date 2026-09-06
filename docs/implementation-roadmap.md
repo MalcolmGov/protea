@@ -1,6 +1,6 @@
 # Protea v0 — Implementation Roadmap
 
-**Date:** 2026-09-06 · **Status:** Phases 0–4 implemented (see `README.md` status table); Phases 5–10 planned. Baselines (Phase 3 step 5) and the first QLoRA launch (Phase 4 step 4) await confirmation.
+**Date:** 2026-09-06 · **Status:** Phases 0–5 implemented (see `README.md` status table); Phases 6–10 planned. Baselines (Phase 3 step 5), the first QLoRA launch (Phase 4 step 4) and the first GPU engine host (Phase 5) await confirmation.
 Status vocabulary used throughout: `implemented` · `partially implemented` · `planned` · `blocked`.
 
 ## 0. Phase 0 outcome
@@ -98,7 +98,7 @@ Each phase begins with inspect → findings → ADR → file list → incrementa
 3. Remote adapters: generic SSH, RunPod, Azure (Bicep generated), Kubernetes job spec; `--dry-run` prints provider/GPU/count/duration/cost/dataset/base model/method; idle shutdown, max runtime, checkpoint-before-stop, storage separated from the instance.
 4. Model card generation (§78). **Execution boundary:** launching the first QLoRA run.
 
-### Phase 5 — Inference
+### Phase 5 — Inference — implemented (ADR-009); Zara routes deferred to Phase 6 in aria
 1. `deployment/protea/Dockerfile.infer` (vLLM, adapter mount, AWQ/FP8 option), health/readiness/metrics endpoints, graceful shutdown.
 2. Zara-specific facade routes in `aria` (`/v1/agent/generate|repair|optimize`, `/v1/workflow/generate`, `/v1/tools/select`) wrapping compiler + validation.
 3. `ProteaProvider` end-to-end tests against a mock vLLM server; `agent_runtime` gateway config documented.

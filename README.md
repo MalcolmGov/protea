@@ -9,7 +9,7 @@ The programme was specified under the working name "ZaraLM". Phase 0 discovery i
 | Area | Status |
 |---|---|
 | Phase 0 discovery documents | implemented — `docs/` |
-| CLI: `doctor`, `version`, `roadmap`, `config validate|show`, `providers list|health`, `dataset validate|stats|build|golden-check|synthesize`, `registry datasets|models|promote`, `evaluate tasks|author|seal|verify|run|compare`, `train local|remote|card|runs|register` | implemented |
+| CLI: `doctor`, `version`, `roadmap`, `config validate|show`, `providers list|health`, `dataset validate|stats|build|golden-check|synthesize`, `registry datasets|models|promote`, `evaluate tasks|author|seal|verify|run|compare`, `train local|remote|card|runs|register`, `serve facade|vllm`, `protea-storage push|pull` | implemented |
 | Generation contract + `ModelProvider` with Anthropic, OpenAI, Google, Azure OpenAI, Ollama, Protea (vLLM) and mock adapters | implemented — Phase 1 (ADR-002) |
 | Training-example schema with provenance envelope and JSONL validation | implemented — Phase 1 (ADR-003) |
 | Dataset and model registries with release lifecycle | implemented — Phase 1 (ADR-004) |
@@ -19,7 +19,7 @@ The programme was specified under the working name "ZaraLM". Phase 0 discovery i
 | Eval-seeded synthetic tool-calling (`dataset synthesize`, gated) | implemented — Phase 2; teacher policy pending |
 | Evaluation framework: task contract, evaluators, LLM judge, runner, reports, release gate + kill criterion; ZaraBench 0.1 sealed (206 tasks, 10 categories) (`evaluate author|seal|verify|run|compare`) | implemented — Phase 3 (ADR-007); base-model and frontier baselines await confirmation |
 | Training: config-driven TRL/PEFT trainer (SFT / LoRA / QLoRA), immutable run snapshots, checkpoint/resume, metrics + optional MLflow, model cards, registry entries; remote GPU adapters (SSH, RunPod, Azure Bicep, Kubernetes) with priced dry runs (`train local|remote|card|runs|register`) | implemented — Phase 4 (ADR-008); first QLoRA launch awaits confirmation |
-| Inference (vLLM, OpenAI-compatible) | planned — Phase 5 |
+| Inference: vLLM engine container rendered from config, CPU facade (OpenAI-compatible + native contract, validation gate with repair, bearer auth, `/healthz` `/readyz` `/metrics`, graceful drain), storage helper, compose (`serve facade|vllm`, `protea-storage`) | implemented — Phase 5 (ADR-009); starting the engine needs a GPU host |
 | Router, fallback, confidence | planned — Phase 7 |
 
 Nothing in this repository starts paid infrastructure, downloads large models or trains anything. Those steps are explicit, confirmed actions when they arrive.
@@ -36,7 +36,9 @@ protea/
   data_pipeline/         sources, discovery, classify, scanners/, extractors/, normalize/, dedup, splits, build, synthetic
   evaluation/            tasks, driver, evaluators, judge, runner, report, golden, reference, authoring (ZaraBench)
   training/              data rendering, run snapshots, trainer, model card, remote/ (ssh, runpod, azure, kubernetes)
-configs/                 models/, training/, inference/, evaluation/, datasets/, remote/, pricing/ (validated in CI)
+  serving/               facade app, OpenAI wire compat, validation gate, metrics, vLLM command
+configs/                 models/, training/, inference/, evaluation/, datasets/, remote/, pricing/, serve/ (validated in CI)
+deployment/protea/       Dockerfiles (infer, facade, train), compose, engine entrypoint
 evaluation/              sealed ZaraBench task sets + golden locks, committed baseline reports
 registry/                datasets.json, models.json (source of truth for releases)
 docs/                    Phase 0 documents, ADRs, model selection
