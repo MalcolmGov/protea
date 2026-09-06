@@ -74,9 +74,13 @@ def _entry(data: dict[str, Any]) -> ModelScores | None:
 
 
 def load_matrix(
-    reports_dir: Path, *, suite: str | None = None, exclude_providers: tuple[str, ...] = ("mock", "reference")
+    reports_dir: Path, *, suite: str | None = "zarabench", exclude_providers: tuple[str, ...] = ("mock", "reference")
 ) -> CapabilityMatrix:
-    """Latest report per provider:model wins (by created_at). Mock and reference runs are never evidence."""
+    """Latest report per provider:model wins (by created_at). Mock and reference runs are never evidence.
+
+    Only reports whose ``suite`` matches are read (``suite=None`` disables the filter): the security probe
+    suite writes reports of the same shape into the same tree, and a probe pass rate is not a capability score.
+    """
     matrix = CapabilityMatrix()
     if not reports_dir.exists():
         return matrix

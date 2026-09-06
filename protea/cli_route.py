@@ -17,7 +17,7 @@ def _load(policy: Path, reports: Path | None):
     from protea.router import ModelRouter, load_matrix
 
     cfg = load_config(policy, "routing")
-    matrix = load_matrix(reports or Path(cfg.reports_dir))
+    matrix = load_matrix(reports or Path(cfg.reports_dir), suite=cfg.suite)
     return cfg, ModelRouter(cfg, matrix=matrix, providers={})
 
 
