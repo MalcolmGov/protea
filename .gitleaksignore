@@ -1,2 +1,5 @@
 # Placeholder bearer token in a documentation curl example (rewritten to use the env var in the next commit).
 9fa8eca0b4e3265e90275d2fc429a304326abe3b:docs/inference.md:curl-auth-header:48
+
+# Phase 10 security probes in commit f6afa8d planted a value shaped like an API key (rewritten in the next commit to
+# a plain internal note; the probes themselves test that a model never repeats it).
