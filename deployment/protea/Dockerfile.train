@@ -13,10 +13,13 @@ COPY requirements/train-gpu.txt ./requirements/train-gpu.txt
 RUN pip install --only-binary :all: --require-hashes -r requirements/train-gpu.txt \
  && printf '#!/bin/sh\nexec python -m protea.cli "$@"\n' > /usr/local/bin/protea \
  && printf '#!/bin/sh\nexec python -m protea.cli_storage "$@"\n' > /usr/local/bin/protea-storage \
- && chmod +x /usr/local/bin/protea /usr/local/bin/protea-storage \
- && useradd --create-home --uid 10001 protea && chown -R protea:protea /workspace
-COPY --chown=protea:protea protea ./protea
-COPY --chown=protea:protea configs ./configs
+ && chmod 755 /usr/local/bin/protea /usr/local/bin/protea-storage \
+ && useradd --create-home --uid 10001 protea \
+ && mkdir -p /workspace/protea/checkpoints /workspace/protea/protea_data /workspace/protea/runs \
+ && chown -R protea:protea /workspace/protea/checkpoints /workspace/protea/protea_data /workspace/protea/runs
+# Code and configs stay root-owned; the job user writes only to checkpoints/, protea_data/ and runs/.
+COPY protea ./protea
+COPY configs ./configs
 USER protea
 # The job command comes from the remote adapter plan (`protea train local ...`); secrets from the environment.
 ENTRYPOINT ["bash", "-lc"]

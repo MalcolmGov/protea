@@ -17,11 +17,12 @@ WORKDIR /app
 COPY requirements/base.txt ./requirements/base.txt
 RUN pip install --only-binary :all: --require-hashes -r requirements/base.txt \
  && useradd --create-home --uid 10001 protea \
- && mkdir -p /adapters /data/hf && chown -R protea:protea /data /app
-COPY --chown=protea:protea protea ./protea
-COPY --chown=protea:protea configs ./configs
-COPY --chown=protea:protea deployment/protea/entrypoint-infer.sh /usr/local/bin/entrypoint-infer.sh
-RUN chmod +x /usr/local/bin/entrypoint-infer.sh
+ && mkdir -p /adapters /data/hf && chown -R protea:protea /data
+# Code, configs and the entrypoint stay root-owned and read-only; the runtime user writes only under /data.
+COPY protea ./protea
+COPY configs ./configs
+COPY deployment/protea/entrypoint-infer.sh /usr/local/bin/entrypoint-infer.sh
+RUN chmod 755 /usr/local/bin/entrypoint-infer.sh
 USER protea
 
 # Adapters are mounted, never baked in; weights land in the HF cache volume.

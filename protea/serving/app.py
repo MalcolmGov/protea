@@ -176,7 +176,7 @@ async def _stream_events(state: FacadeState, gen: GenerationRequest, model: str,
         yield sse_chunk(chunk_id, model, {"content": ""}, finish="error") + "data: [DONE]\n\n"
 
 
-@api.post("/chat/completions")
+@api.post("/chat/completions", responses={404: ERROR_RESPONSES[404]})
 async def chat_completions(body: ChatCompletionRequest, request: Request, state: FacadeState = Depends(_state)):
     model = state.served_model(body.model)
     gen = to_generation_request(body, task_type=body.metadata.get("task_type"), tenant_ref=_tenant_ref(request))
