@@ -251,10 +251,12 @@ async def _observe(request: Request, call_next):
     return response
 
 
-def create_app(cfg: ServeConfig, backend: ModelProvider, *, token: str | None = None) -> FastAPI:
+def create_app(cfg: ServeConfig, backend: ModelProvider, *, token: str | None = None, router: Any = None) -> FastAPI:
+    """`router` is an optional protea.router.ModelRouter; when given, `/v1/route/*` is mounted."""
     if cfg.require_token and not token:
         raise ValueError("require_token is set but no token was provided (PROTEA_FACADE_TOKEN)")
     state = FacadeState(cfg, backend, token)
+    state.router = router
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -267,4 +269,8 @@ def create_app(cfg: ServeConfig, backend: ModelProvider, *, token: str | None = 
     app.middleware("http")(_observe)
     app.include_router(ops)
     app.include_router(api)
+    if router is not None:
+        from protea.serving.route_api import route_api
+
+        app.include_router(route_api)
     return app

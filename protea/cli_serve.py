@@ -31,12 +31,25 @@ def build_facade(config: Path, *, backend: str | None = None, model: str | None 
     except ProviderNotConfigured as exc:
         _fail(str(exc))
         raise
+    router = _build_router(cfg, provider) if cfg.routing_policy else None
     try:
-        app = create_app(cfg, provider, token=settings.protea_facade_token)
+        app = create_app(cfg, provider, token=settings.protea_facade_token, router=router)
     except ValueError as exc:
         _fail(str(exc))
         raise
     return cfg, provider, app
+
+
+def _build_router(cfg, backend):
+    """Router candidates are built lazily by provider name; the facade's own backend serves the candidate whose
+    provider matches it, so a `protea` candidate never opens a second connection to the engine."""
+    from protea.config import load_config
+    from protea.router import JsonlRouteSink, ModelRouter
+
+    policy = load_config(Path(cfg.routing_policy), "routing")
+    preset = {c.name: backend for c in policy.candidates if c.provider == backend.name}
+    sink = JsonlRouteSink(Path(cfg.route_events)) if cfg.route_events else None
+    return ModelRouter(policy, providers=preset, sink=sink)
 
 
 @serve_app.command("facade")

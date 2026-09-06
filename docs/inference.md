@@ -23,6 +23,7 @@ Design decisions are in `adr/ADR-009-inference.md`. Container definitions are in
 | POST | `/v1/chat/completions` | bearer | OpenAI wire format: messages, tools, `response_format`, `stream` |
 | POST | `/v1/generate` | bearer | native `GenerationRequest` → `GenerationResponse` |
 | POST | `/v1/generate/structured` | bearer | `{request, schema, max_repairs?}` → `{valid, output, errors, repairs}`; 422 when still invalid |
+| POST | `/v1/route/generate`, `/v1/route/structured` | bearer | routed variants (Phase 7): the policy picks the model, falls back on invalid output, returns the decision and confidence; mounted when `routing_policy` is set — see `routing.md` |
 
 Headers: `Authorization: Bearer <PROTEA_FACADE_TOKEN>`, optional `x-protea-tenant` (hashed before it reaches usage events), optional `x-request-id`.
 

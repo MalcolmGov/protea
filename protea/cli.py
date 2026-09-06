@@ -11,6 +11,7 @@ import typer
 from protea import __version__
 from protea import doctor as _doctor
 from protea.cli_evaluate import evaluate_app
+from protea.cli_route import route_app
 from protea.cli_serve import serve_app
 from protea.cli_train import train_app
 
@@ -26,6 +27,7 @@ app.add_typer(registry_app, name="registry")
 app.add_typer(evaluate_app, name="evaluate")
 app.add_typer(train_app, name="train")
 app.add_typer(serve_app, name="serve")
+app.add_typer(route_app, name="route")
 
 PLANNED = {
     "evaluate run --provider <base model>": "Phase 3 — needs a GPU host or a hosted inference endpoint (execution boundary)",
@@ -70,7 +72,7 @@ def config_validate(
     path: Path = typer.Argument(..., exists=True, help="A YAML file or a directory such as configs/."),
     kind: str | None = typer.Option(
         None,
-        help="model | training | inference | evaluation | dataset | remote | pricing | serve (inferred from the parent directory).",
+        help="model | training | inference | evaluation | dataset | remote | pricing | serve | routing (inferred from the parent directory).",
     ),
 ) -> None:
     """Validate configuration files against their schemas and print each content hash."""
@@ -80,7 +82,17 @@ def config_validate(
     failures = 0
     for f in files:
         k = kind or f.parent.name.rstrip("s")
-        if k not in ("model", "training", "inference", "evaluation", "dataset", "remote", "pricing", "serve"):
+        if k not in (
+            "model",
+            "training",
+            "inference",
+            "evaluation",
+            "dataset",
+            "remote",
+            "pricing",
+            "serve",
+            "routing",
+        ):
             typer.echo(f"skip  {f} (unknown kind {k!r})")
             continue
         try:

@@ -14,7 +14,8 @@ Protea is Moove Digital's proprietary model platform. It began as "ZaraLM" in th
 | `data-governance.md` | Lanes, teacher-model policy, consent plumbing, retention |
 | `training.md` | Local runs, remote GPU jobs (dry-run first), run directories, model cards |
 | `inference.md` | Engine + facade, endpoints, wiring aria's gateway, GPU host steps |
+| `routing.md` | How a call is routed, the policy file, `/v1/route/*`, turning Protea on by canary |
 | `zarabench.md` | Running, extending and baselining the ZaraBench suite; release gate and kill criterion |
-| `adr/` | Architecture decision records (001 repository split, 002 provider abstraction, 003 dataset format, 004 registries, 005 configuration, 006 data pipeline, 007 evaluation framework, 008 training, 009 inference) |
+| `adr/` | Architecture decision records (001 repository split, 002 provider abstraction, 003 dataset format, 004 registries, 005 configuration, 006 data pipeline, 007 evaluation framework, 008 training, 009 inference, 010 router) |
 
-Planned (per the specification): `routing.md`, `security.md`, `deployment.md`, `operations.md`.
+Planned (per the specification): `security.md`, `deployment.md`, `operations.md`.
