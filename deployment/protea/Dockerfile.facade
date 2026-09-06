@@ -1,0 +1,15 @@
+# Protea inference facade: OpenAI-compatible gateway + validation gate + health/readiness/metrics. CPU only.
+# Build:  docker build -f deployment/protea/Dockerfile.facade -t ghcr.io/malcolmgov/protea-facade:latest .
+FROM python:3.12-slim AS base
+ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
+WORKDIR /app
+COPY pyproject.toml README.md LICENSE ./
+COPY protea ./protea
+COPY configs ./configs
+RUN pip install ".[serve]" && useradd --create-home --uid 10001 protea
+USER protea
+EXPOSE 8080
+HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \
+  CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8080/readyz', timeout=2).status==200 else 1)"
+STOPSIGNAL SIGTERM
+CMD ["protea", "serve", "facade", "--config", "configs/serve/facade.yaml"]

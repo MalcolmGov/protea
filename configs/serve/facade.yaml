@@ -1,0 +1,11 @@
+# Protea inference facade: what aria's runtime (MIAI_MODEL_GATEWAY_URL) and the Zara routes talk to.
+backend: protea               # vLLM via PROTEA_INFERENCE_URL; use `mock` for local checks
+served_model: protea-agent
+aliases: [protea, protea-agent-0.1]
+host: 0.0.0.0
+port: 8080
+require_token: true           # PROTEA_FACADE_TOKEN
+ready_ttl_s: 15
+drain_timeout_s: 30
+max_repairs: 1
+workers: 1

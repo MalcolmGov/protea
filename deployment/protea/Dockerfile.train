@@ -1,0 +1,15 @@
+# Protea training image for the remote job adapters (ghcr.io/malcolmgov/protea-train).
+# Build:  docker build -f deployment/protea/Dockerfile.train -t ghcr.io/malcolmgov/protea-train:latest .
+FROM pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime
+ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 HF_HUB_ENABLE_HF_TRANSFER=1
+RUN apt-get update && apt-get install -y --no-install-recommends git rsync curl unzip && rm -rf /var/lib/apt/lists/* \
+ && curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscli.zip \
+ && unzip -q /tmp/awscli.zip -d /tmp && /tmp/aws/install && rm -rf /tmp/aws /tmp/awscli.zip
+WORKDIR /workspace/protea
+COPY pyproject.toml README.md LICENSE ./
+COPY protea ./protea
+COPY configs ./configs
+RUN pip install ".[train]"
+# The job command comes from the remote adapter plan (`protea train local ...`); secrets from the environment.
+ENTRYPOINT ["bash", "-lc"]
+CMD ["protea train local --help"]

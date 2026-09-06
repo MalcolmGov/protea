@@ -27,6 +27,7 @@ class ProteaSettings(BaseSettings):
     protea_inference_url: str | None = None  # vLLM OpenAI-compatible base, e.g. http://gpu:8000/v1
     protea_inference_token: str | None = None
     protea_inference_model: str = "protea-agent"
+    protea_facade_token: str | None = None  # bearer token the facade requires from callers
     hf_token: str | None = None
     runpod_api_key: str | None = None
     mlflow_tracking_uri: str | None = None

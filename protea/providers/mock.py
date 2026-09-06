@@ -7,7 +7,7 @@ from collections.abc import Callable
 from typing import Any
 
 from protea.providers.base import ModelProvider
-from protea.schemas.generation import GenerationRequest, GenerationResponse, ToolCall, Usage
+from protea.schemas.generation import GenerationRequest, GenerationResponse, ModelHealth, ToolCall, Usage
 
 Scripted = str | dict[str, Any] | ToolCall | list[ToolCall] | GenerationResponse
 Responder = Callable[[GenerationRequest], Scripted]
@@ -48,3 +48,7 @@ class MockProvider(ModelProvider):
         if isinstance(scripted, dict):
             return GenerationResponse(content=json.dumps(scripted), usage=usage, provider=self.name, model=self.model)
         return GenerationResponse(content=str(scripted), usage=usage, provider=self.name, model=self.model)
+
+    async def health(self) -> ModelHealth:
+        """Always healthy, and never consumes a scripted response (readiness probes must not eat test scripts)."""
+        return ModelHealth(provider=self.name, model=self.model, ok=True, latency_ms=0)
