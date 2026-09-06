@@ -25,7 +25,7 @@
       "train_samples_per_second": 0.117,
       "train_steps_per_second": 0.059
     },
-    "model_card_path": "checkpoints/rehearsal-cpu/rehearsal-cpu/rehearsal-1/model-card.md",
+    "model_card_path": "docs/models/protea-agent-0.0.1.md",
     "training_dataset": "agent-training-0.1.0",
     "training_method": "lora",
     "version": "0.0.1"
