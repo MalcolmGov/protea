@@ -103,3 +103,52 @@ def test_parallel_tool_results_share_one_user_message():
 def test_not_configured():
     with pytest.raises(ProviderNotConfigured):
         AnthropicProvider(model="claude-opus-5", api_key=None)
+
+
+def test_strict_schema_adds_additional_properties_false_everywhere():
+    from protea.providers.anthropic_provider import strict_schema
+
+    schema = {
+        "type": "object",
+        "properties": {
+            "tools": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}}}},
+            "policy": {"properties": {"limit": {"type": "number", "minimum": 0}}},
+        },
+        "required": ["tools"],
+    }
+    out = strict_schema(schema)
+    assert out["additionalProperties"] is False
+    assert out["properties"]["tools"]["items"]["additionalProperties"] is False
+    assert out["properties"]["policy"]["additionalProperties"] is False
+    assert out["properties"]["policy"]["properties"]["limit"]["minimum"] == 0
+    assert "additionalProperties" not in schema  # caller's schema untouched
+
+
+class _RejectThenAccept:
+    """First call: the API refuses the structured-output schema (400); second call: a plain answer."""
+
+    def __init__(self, result):
+        self.result, self.calls = result, []
+
+    async def create(self, **params):
+        self.calls.append(params)
+        if len(self.calls) == 1:
+            raise RuntimeError(
+                "Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', "
+                "'message': \"output_config.format.schema: For 'object' type, 'additionalProperties' must be false\"}}"
+            )
+        return self.result
+
+
+async def test_schema_rejection_falls_back_to_prompt_instruction():
+    text = SimpleNamespace(type="text", text='{"lane": "orders"}')
+    client = SimpleNamespace(messages=_RejectThenAccept(_msg([text])))
+    p = AnthropicProvider(model="claude-opus-5", api_key=None, client=client)
+    schema = {"type": "object", "properties": {"lane": {"type": "string"}}, "required": ["lane"]}
+    req = GenerationRequest(messages=[Message(role="user", content="classify")], response_schema=schema)
+    resp = await p.generate(req)
+    assert resp.content == '{"lane": "orders"}'
+    first, second = client.messages.calls
+    assert first["output_config"]["format"]["schema"]["additionalProperties"] is False
+    assert "output_config" not in second
+    assert "JSON Schema" in second["system"] and '"lane"' in second["system"]

@@ -59,11 +59,13 @@ def test_text_checks():
     assert names["max_words"] is False
 
 
-def test_json_only_rejects_fences_but_lenient_mode_accepts_them():
+def test_json_only_tolerates_a_fence_but_rejects_prose():
     obj = {"lane": "stokvel"}
     fenced = "```json\n" + json.dumps(obj) + "\n```"
     strict = evaluate(_task(Expect(json_only=True, json_equals=obj), tools=()), _transcript(fenced))
-    assert _names(strict) == {"json_parsable": False}
+    assert strict.passed  # the production gate strips a single fence, so the benchmark does too
+    prose = evaluate(_task(Expect(json_only=True, json_equals=obj), tools=()), _transcript("Sure: " + fenced))
+    assert _names(prose) == {"json_parsable": False}
     lenient = evaluate(_task(Expect(json_equals=obj), tools=()), _transcript("Sure: " + fenced))
     assert lenient.passed
 

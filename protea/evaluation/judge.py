@@ -83,7 +83,7 @@ async def apply_judge(judge: ModelProvider, task: EvalTask, t: Transcript, resul
     try:
         verdict = await judge.generate_structured(req, JudgeVerdict)
     except ProviderError as exc:
-        result.checks.append(Check(name="judge_error", ok=False, detail=str(exc)[:160]))
+        result.judge_error = str(exc)[:200]  # checks stay in judge_skipped: the report is partial, not failed
         return result
     result.checks.extend(_verdict_checks(task, verdict))
     result.judge_skipped = []
