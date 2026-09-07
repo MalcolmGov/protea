@@ -11,7 +11,7 @@ import typer
 evaluate_app = typer.Typer(help="Evaluation framework and the ZaraBench suite.", no_args_is_help=True)
 
 DEFAULT_CONFIG = Path("configs/evaluation/zarabench-0.1.yaml")
-FREE_PROVIDERS = {"mock", "reference"}
+FREE_PROVIDERS = {"mock", "reference", "local"}  # local runs in-process: no tokens leave the machine
 
 
 def _fail(msg: str, code: int = 1) -> None:
@@ -32,26 +32,62 @@ def _load(config: Path, root: Path):
     return cfg, config_hash(cfg), load_tasks(tasks_path), task_set_hash(tasks_path)
 
 
-def _select(tasks, categories: str | None, limit: int | None, language: str | None):
+def _select(tasks, categories: str | None, limit: int | None, language: str | None, per_category: int | None = None):
     if categories:
         wanted = {c.strip() for c in categories.split(",")}
         tasks = [t for t in tasks if t.category.value in wanted]
     if language:
         tasks = [t for t in tasks if t.language == language]
+    if per_category:
+        tasks = spread(tasks, per_category)
     return tasks[:limit] if limit else tasks
 
 
-def _build(name: str, model: str | None, tasks):
+def spread(tasks, per_category: int):
+    """An even, deterministic sample: the same `per_category` tasks from each category every time, spaced through
+    the category so families and languages are mixed. Use it for a quick read; the full suite is the gate."""
+    by_cat: dict[str, list] = {}
+    for t in tasks:
+        by_cat.setdefault(t.category.value, []).append(t)
+    picked = []
+    for cat_tasks in by_cat.values():
+        n = min(per_category, len(cat_tasks))
+        step = len(cat_tasks) / n
+        picked.extend(cat_tasks[int(i * step)] for i in range(n))
+    return picked
+
+
+def _build(name: str, model: str | None, tasks, *, concurrency: int = 1):
     from protea.evaluation.reference import ReferenceProvider
     from protea.providers import ProviderNotConfigured, build_provider
 
     if name == "reference":
         return ReferenceProvider(tasks)
+    overrides = {}
+    if name == "local":
+        overrides["threads"] = local_threads(concurrency)
     try:
-        return build_provider(name, model=model)
+        return build_provider(name, model=model, **overrides)
     except ProviderNotConfigured as exc:
         _fail(str(exc))
         return None
+
+
+def local_threads(concurrency: int) -> int | None:
+    """Torch threads per in-process generation when `concurrency` tasks run at once.
+
+    Without this every worker takes all cores (4 workers × 4 threads on a 4-core box oversubscribes it
+    four times over). An explicit PROTEA_LOCAL_THREADS wins.
+    """
+    import os
+
+    from protea.config import get_settings
+
+    explicit = get_settings().local_threads
+    if explicit:
+        return explicit
+    cores = os.cpu_count() or 1
+    return max(1, cores // max(1, concurrency))
 
 
 def _generator_models(root: Path) -> set[str]:
@@ -168,6 +204,27 @@ def _paid_gate(cfg, tasks, provider: str, model: str | None, judge_provider: str
         _fail("re-run with --confirm to proceed")
 
 
+def _split_judge(judge: str | None) -> tuple[str | None, str | None]:
+    if not judge:
+        return None, None
+    provider, _, model = judge.partition(":")
+    return provider or None, model or None
+
+
+def progress_printer():
+    """Build an ``on_result`` callback that prints one progress line per finished task to stderr."""
+    from time import monotonic
+
+    from protea.evaluation.runner import progress_line
+
+    started = monotonic()
+
+    def _print(done: int, total: int, result) -> None:
+        typer.echo(progress_line(done, total, result, started=started), err=True)
+
+    return _print
+
+
 def _print_summary(report, json_path: Path, md_path: Path) -> None:
     typer.echo(
         f"ZaraScore {report.zarascore:.4f} (strict {report.zarascore_strict:.4f})"
@@ -192,30 +249,49 @@ def evaluate_run(
     categories: str | None = typer.Option(None, help="Comma-separated category filter."),
     language: str | None = typer.Option(None),
     limit: int | None = typer.Option(None),
-    judge_provider: str | None = typer.Option(None, help="Overrides the config's judge provider."),
-    judge_model: str | None = typer.Option(None),
+    per_category: int | None = typer.Option(
+        None, help="Quick read: an even, deterministic sample of N tasks per category."
+    ),
+    judge: str | None = typer.Option(
+        None, help="Overrides the config's judge as provider[:model], e.g. anthropic:claude-opus-5."
+    ),
     confirm: bool = typer.Option(False, "--confirm", help="Required for any provider that spends tokens."),
     label: str | None = typer.Option(None, help="Run id; defaults to a UTC timestamp."),
+    max_tokens: int | None = typer.Option(None, help="Override the config's max_tokens (recorded in the config hash)."),
 ) -> None:
     """Run the suite against a provider and write JSON + Markdown reports. Paid providers need --confirm."""
+    from protea.config import config_hash
     from protea.evaluation.judge import check_independence
     from protea.evaluation.report import write_report
     from protea.evaluation.runner import run_benchmark
 
     cfg, cfg_hash, tasks, digest = _load(config, root)
-    tasks = _select(tasks, categories, limit, language)
+    if max_tokens is not None:
+        cfg = cfg.model_copy(update={"max_tokens": max_tokens})
+        cfg_hash = config_hash(cfg)
+    tasks = _select(tasks, categories, limit, language, per_category)
     if not tasks:
         _fail("no tasks selected")
+    judge_provider, judge_model = _split_judge(judge)
     jp = judge_provider or cfg.judge_provider
     _paid_gate(cfg, tasks, provider, model, jp, confirm)
-    prov = _build(provider, model, tasks)
+    prov = _build(provider, model, tasks, concurrency=cfg.concurrency)
     judge = _build(jp, judge_model or cfg.judge_model, tasks) if jp else None
     if judge is not None:
         problems = check_independence(judge, prov, _generator_models(root), cfg.judge_must_differ_from_generator)
         if problems:
             _fail("; ".join(problems))
     report = asyncio.run(
-        run_benchmark(cfg, tasks, prov, judge=judge, run_id=label, config_hash=cfg_hash, task_set_hash=digest)
+        run_benchmark(
+            cfg,
+            tasks,
+            prov,
+            judge=judge,
+            run_id=label,
+            config_hash=cfg_hash,
+            task_set_hash=digest,
+            on_result=progress_printer(),
+        )
     )
     json_path, md_path = write_report(report, out, cfg)
     _print_summary(report, json_path, md_path)

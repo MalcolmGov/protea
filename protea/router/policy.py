@@ -66,6 +66,7 @@ class RoutingPolicy(BaseModel):
     min_confidence: float = Field(default=0.6, ge=0.0, le=1.0)  # below this a validated answer still triggers fallback
     max_attempts: int = Field(default=3, ge=1, le=6)
     reports_dir: str = "evaluation/reports"
+    suite: str = "zarabench"  # only reports from this suite are capability evidence (security probes never are)
     latency_budget_ms: int | None = None
 
     @model_validator(mode="after")

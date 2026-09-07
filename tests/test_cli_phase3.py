@@ -97,3 +97,11 @@ def test_roadmap_no_longer_lists_evaluation_as_planned():
     result = runner.invoke(app, ["roadmap"])
     assert "Phase 3" in result.output  # only the GPU baseline remains a boundary
     assert "evaluate / benchmark" not in result.output
+
+
+def test_split_judge_accepts_provider_with_optional_model():
+    from protea.cli_evaluate import _split_judge
+
+    assert _split_judge(None) == (None, None)
+    assert _split_judge("anthropic") == ("anthropic", None)
+    assert _split_judge("anthropic:claude-opus-5") == ("anthropic", "claude-opus-5")

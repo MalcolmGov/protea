@@ -209,6 +209,23 @@ def train_runs(root: Path = typer.Option(Path(".")), output_dir: str = typer.Opt
         )
 
 
+# Trainer metric -> registry key. The registry keeps the numbers that matter for a release decision under
+# stable names; raw trainer output (throughput, flop counts, token totals) stays in the run's manifest.
+REGISTRY_METRICS = {
+    "train_loss": "train_loss",
+    "eval_loss": "eval_loss",
+    "eval_entropy": "eval_entropy",
+    "eval_mean_token_accuracy": "eval_accuracy",
+    "train_runtime": "train_runtime_s",
+    "eval_runtime": "eval_runtime_s",
+    "epoch": "epoch",
+}
+
+
+def registry_metrics(final_metrics: dict) -> dict[str, float]:
+    return {new: float(final_metrics[old]) for old, new in REGISTRY_METRICS.items() if old in final_metrics}
+
+
 @train_app.command("register")
 def train_register(
     run_dir: Path = typer.Argument(..., exists=True),
@@ -240,7 +257,7 @@ def train_register(
         git_commit=m.git_commit,
         experiment_id=f"{m.experiment_name}/{m.run_id}",
         model_card_path=str(run.card_path) if run.card_path.exists() else None,
-        metrics=dict(m.final_metrics),
+        metrics=registry_metrics(m.final_metrics),
     )
     try:
         ModelRegistry(path).add(entry)

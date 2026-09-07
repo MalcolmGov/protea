@@ -41,7 +41,7 @@ One `EvalTask` per line (`protea/evaluation/tasks.py`): `id`, `category`, `langu
 
 The roadmap requires two baselines before training: the unmodified candidate (Qwen3-8B) and one frontier model. Neither is run automatically.
 
-- **Frontier.** `protea evaluate run --provider anthropic --model claude-opus-5 --judge-provider anthropic --judge-model claude-sonnet-5 --confirm`. Pre-flight estimate for the full suite: ≈640 k input tokens, ≈85 k output tokens, ≈USD 5 at the prices in the config (update them first). The judge adds roughly the same input volume again. Task prompts contain catalogue system prompts and business knowledge; that content leaves the estate.
+- **Frontier.** `protea evaluate run --provider anthropic --model claude-opus-5 --judge anthropic:claude-sonnet-5 --confirm`. Pre-flight estimate for the full suite: ≈640 k input tokens, ≈85 k output tokens, ≈USD 5 at the prices in the config (update them first). The judge adds roughly the same input volume again. Task prompts contain catalogue system prompts and business knowledge; that content leaves the estate.
 - **Candidate.** Serve `Qwen/Qwen3-8B` with vLLM (Phase 5 container or any OpenAI-compatible host), set `PROTEA_INFERENCE_URL`, then `protea evaluate run --provider protea --model Qwen/Qwen3-8B --confirm`. Needs a 24 GB-class GPU for ≈1–2 hours, or a hosted endpoint.
 - **Judge independence.** The judge must differ from the model under test and from any `generator_models` in `registry/datasets.json`.
 
@@ -56,6 +56,18 @@ Commit the resulting JSON and Markdown under `evaluation/reports/` and reference
 - Add tasks by hand in the same JSONL format, or re-run `evaluate author` against a newer dataset build; then `evaluate seal` (a reviewed change: the hash and the family list change).
 - New evaluators go in `protea/evaluation/evaluators.py` as named checks; add a field to `Expect` and a test in `tests/test_evaluators.py`.
 - Non-English coverage is the first gap: author af/zu/xh/st/tn/sw tasks under `instruction_following` and `tool_calling` for 0.2.
+
+## Progress on long runs
+
+`protea evaluate run` and `protea security run` print one line per finished task to stderr:
+
+```
+[ 12/206] 0:04:10 eta 1:07:20  agent-gen-en-0007  0.75
+```
+
+The columns are the running count, elapsed time, a linear ETA from the average time per task so far, the
+task id and the deterministic score (`ERR` when the provider failed). The lines go to stderr only; the JSON and
+Markdown reports are unchanged.
 
 ## Credentials in cloud sandboxes
 

@@ -4,6 +4,7 @@
 name: zara
 version: "0.1"
 reports_dir: evaluation/reports
+suite: zarabench                 # security-suite reports live in the same tree and are never capability evidence
 
 candidates:
   - name: protea-agent            # the fine-tuned model behind the Protea facade (self-hosted)

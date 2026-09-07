@@ -7,7 +7,17 @@ from typing import Any
 from protea.config.settings import ProteaSettings, get_settings
 from protea.providers.base import ModelProvider, ProviderNotConfigured, UsageSink
 
-PROVIDER_NAMES = ("mock", "anthropic", "openai", "google", "azure_openai", "ollama", "protea", "openai_compatible")
+PROVIDER_NAMES = (
+    "mock",
+    "anthropic",
+    "openai",
+    "google",
+    "azure_openai",
+    "ollama",
+    "protea",
+    "local",
+    "openai_compatible",
+)
 
 
 def provider_status(settings: ProteaSettings | None = None) -> dict[str, dict[str, Any]]:
@@ -31,6 +41,11 @@ def provider_status(settings: ProteaSettings | None = None) -> dict[str, dict[st
             "configured": bool(s.protea_inference_url),
             "model": s.protea_inference_model,
             "needs": "PROTEA_INFERENCE_URL",
+        },
+        "local": {
+            "configured": True,
+            "model": s.local_model + (f" + {s.local_adapter}" if s.local_adapter else ""),
+            "needs": "transformers/torch installed (PROTEA_LOCAL_MODEL, PROTEA_LOCAL_ADAPTER)",
         },
     }
 
@@ -84,6 +99,19 @@ def _build_protea(s: ProteaSettings, model: str | None, kw: dict[str, Any], ov: 
     )
 
 
+def _build_local(s: ProteaSettings, model: str | None, kw: dict[str, Any], ov: dict[str, Any]) -> ModelProvider:
+    from protea.providers.local_hf import LocalHFProvider
+
+    return LocalHFProvider(
+        model or s.local_model,
+        ov.pop("adapter", s.local_adapter),
+        served_as=ov.pop("served_as", s.local_served_as),
+        threads=ov.pop("threads", s.local_threads),
+        **kw,
+        **ov,
+    )
+
+
 def _build_generic(s: ProteaSettings, model: str | None, kw: dict[str, Any], ov: dict[str, Any]) -> ModelProvider:
     return _build_openai_compatible(
         "openai_compatible", model or "default", ov.pop("base_url", None), ov.pop("api_key", None), s, kw, ov
@@ -134,6 +162,7 @@ _BUILDERS = {
     "azure_openai": _build_azure,
     "ollama": _build_ollama,
     "protea": _build_protea,
+    "local": _build_local,
     "openai_compatible": _build_generic,
 }
 

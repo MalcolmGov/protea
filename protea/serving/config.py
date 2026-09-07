@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from protea.serving.guard import ToolPolicy
+
 
 class ServeConfig(BaseModel):
     backend: str = "protea"  # provider name from `protea providers list`
@@ -19,6 +21,7 @@ class ServeConfig(BaseModel):
     routing_policy: str | None = None  # configs/routing/*.yaml; mounts /v1/route/* when set
     route_events: str | None = None  # JSONL file for route/fallback events (default: application log)
     workers: int = 1
+    tool_policy: ToolPolicy | None = None  # tool-permission guard applied to every backend response (serving/guard.py)
 
     def model_aliases(self) -> set[str]:
         return {self.served_model, *self.aliases}

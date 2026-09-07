@@ -108,7 +108,7 @@ class ModelRouter:
         history: SuccessHistory | None = None,
     ):
         self.policy = policy
-        self.matrix = matrix if matrix is not None else load_matrix(Path(policy.reports_dir))
+        self.matrix = matrix if matrix is not None else load_matrix(Path(policy.reports_dir), suite=policy.suite)
         self._providers: dict[str, ModelProvider] = dict(providers or {})
         self._factory = provider_factory or _default_factory
         self.sink = sink or LoggingRouteSink()

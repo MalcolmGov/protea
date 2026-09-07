@@ -79,13 +79,22 @@ def test_policy_rejects_inconsistent_definitions():
 
 
 def test_matrix_ignores_mock_and_reads_latest_report():
-    matrix = load_matrix(REPORTS)
+    matrix = load_matrix(REPORTS, suite="zarabench")
     assert set(matrix.models) == {"protea:protea-agent"}
     assert matrix.score("protea:protea-agent", "tool_calling") == 0.9
     ok, reason = matrix.eligible("protea:protea-agent", "agent_generation", 0.75)
     assert not ok
     assert "0.60 < threshold 0.75" in reason
     assert matrix.eligible("mock:mock-1", "tool_calling", 0.1) == (False, "no benchmark report for mock:mock-1")
+
+
+def test_matrix_only_counts_the_policy_suite_as_evidence():
+    # A newer security-probe report for the same model must not overwrite its ZaraBench scores.
+    unfiltered = load_matrix(REPORTS, suite=None)
+    assert unfiltered.score("protea:protea-agent", "tool_calling") == 1.0
+    assert _policy().suite == "zarabench"
+    router = ModelRouter(_policy(reports_dir=str(REPORTS)), providers={})
+    assert router.matrix.score("protea:protea-agent", "tool_calling") == 0.9
 
 
 # ---- classification ----------------------------------------------------------------------------------------
