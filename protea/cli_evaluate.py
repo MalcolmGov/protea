@@ -32,13 +32,29 @@ def _load(config: Path, root: Path):
     return cfg, config_hash(cfg), load_tasks(tasks_path), task_set_hash(tasks_path)
 
 
-def _select(tasks, categories: str | None, limit: int | None, language: str | None):
+def _select(tasks, categories: str | None, limit: int | None, language: str | None, per_category: int | None = None):
     if categories:
         wanted = {c.strip() for c in categories.split(",")}
         tasks = [t for t in tasks if t.category.value in wanted]
     if language:
         tasks = [t for t in tasks if t.language == language]
+    if per_category:
+        tasks = spread(tasks, per_category)
     return tasks[:limit] if limit else tasks
+
+
+def spread(tasks, per_category: int):
+    """An even, deterministic sample: the same `per_category` tasks from each category every time, spaced through
+    the category so families and languages are mixed. Use it for a quick read; the full suite is the gate."""
+    by_cat: dict[str, list] = {}
+    for t in tasks:
+        by_cat.setdefault(t.category.value, []).append(t)
+    picked = []
+    for cat_tasks in by_cat.values():
+        n = min(per_category, len(cat_tasks))
+        step = len(cat_tasks) / n
+        picked.extend(cat_tasks[int(i * step)] for i in range(n))
+    return picked
 
 
 def _build(name: str, model: str | None, tasks, *, concurrency: int = 1):
@@ -226,6 +242,9 @@ def evaluate_run(
     categories: str | None = typer.Option(None, help="Comma-separated category filter."),
     language: str | None = typer.Option(None),
     limit: int | None = typer.Option(None),
+    per_category: int | None = typer.Option(
+        None, help="Quick read: an even, deterministic sample of N tasks per category."
+    ),
     judge_provider: str | None = typer.Option(None, help="Overrides the config's judge provider."),
     judge_model: str | None = typer.Option(None),
     confirm: bool = typer.Option(False, "--confirm", help="Required for any provider that spends tokens."),
@@ -242,7 +261,7 @@ def evaluate_run(
     if max_tokens is not None:
         cfg = cfg.model_copy(update={"max_tokens": max_tokens})
         cfg_hash = config_hash(cfg)
-    tasks = _select(tasks, categories, limit, language)
+    tasks = _select(tasks, categories, limit, language, per_category)
     if not tasks:
         _fail("no tasks selected")
     jp = judge_provider or cfg.judge_provider

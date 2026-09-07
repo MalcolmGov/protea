@@ -27,6 +27,12 @@ Design decisions are in `adr/ADR-009-inference.md`. Container definitions are in
 
 Headers: `Authorization: Bearer <PROTEA_FACADE_TOKEN>`, optional `x-protea-tenant` (hashed before it reaches usage events), optional `x-request-id`.
 
+## Tool-permission guard
+
+`tool_policy` in the serve config wraps the backend and every router candidate with the guard described in
+`docs/security.md`: denied tool patterns, per-tool amount limits that turn into escalations, and confidential
+system-prompt lines that never come back out. Leave it set in production; drop it only for harness self-checks.
+
 ## Wiring aria
 
 TypeScript runtime (agent_runtime): set

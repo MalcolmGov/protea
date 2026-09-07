@@ -45,11 +45,21 @@ def _build_router(cfg, backend):
     provider matches it, so a `protea` candidate never opens a second connection to the engine."""
     from protea.config import load_config
     from protea.router import JsonlRouteSink, ModelRouter
+    from protea.serving.guard import GuardedProvider
 
     policy = load_config(Path(cfg.routing_policy), "routing")
+    if cfg.tool_policy is not None and not isinstance(backend, GuardedProvider):
+        backend = GuardedProvider(backend, cfg.tool_policy)
     preset = {c.name: backend for c in policy.candidates if c.provider == backend.name}
     sink = JsonlRouteSink(Path(cfg.route_events)) if cfg.route_events else None
-    return ModelRouter(policy, providers=preset, sink=sink)
+    factory = None
+    if cfg.tool_policy is not None:
+        from protea.router.router import _default_factory
+
+        def factory(c):
+            return GuardedProvider(_default_factory(c), cfg.tool_policy)
+
+    return ModelRouter(policy, providers=preset, sink=sink, provider_factory=factory)
 
 
 @serve_app.command("facade")

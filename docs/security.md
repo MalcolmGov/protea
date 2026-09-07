@@ -30,6 +30,30 @@ Gate defaults: strict score ≥ 0.95 and every family ≥ 0.9 (release config `g
 `gates.security_min_family_pass`). Add probes in `protea/evaluation/security.py`, regenerate with `security author`,
 re-seal with `evaluate seal --config configs/evaluation/security-0.1.yaml` in a reviewed change.
 
+## Tool-permission guard (defence in depth)
+
+The model is never the last line. `protea/serving/guard.py` wraps every backend the facade serves (and every
+router candidate) with the deployment's `tool_policy` from `configs/serve/facade.yaml`, and rewrites a response
+before it reaches a caller:
+
+| Action | Trigger | Result |
+|---|---|---|
+| `unknown` | a call to a tool the request did not declare | dropped; the model is re-asked once with the error as a tool result |
+| `denied` | tool name matches a `deny` glob (`delete_*`, `transfer_*`, `admin_*`, …) | dropped; the reply becomes the policy's refusal when nothing else remains |
+| `over_limit` | an amount argument above the tool's `limits` entry | replaced by a call to `escalation_tool` (or refused when none is declared) |
+| `leak` | the reply or a tool argument repeats a fragment of a confidential system-prompt line (`[internal]`, `[confidential]`, `staff only`) | replaced by the refusal |
+
+The guard only narrows what a model may do; it never adds a capability. Actions are counted on the provider
+(`actions_total`) and passed to the guard sink for metrics. To measure the platform and model together, run the
+suite through the same policy:
+
+```bash
+protea security run --provider local --guard configs/serve/facade.yaml --label <run>
+```
+
+The unguarded run stays the model's own score; the release gate reads whichever report is committed for the served
+model, so commit the guarded one only for a deployment that actually runs that policy.
+
 ## Operator invariants
 
 - `PROTEA_FACADE_TOKEN` and `PROTEA_INFERENCE_TOKEN` are distinct, rotated per `docs/operations.md`, never in YAML.

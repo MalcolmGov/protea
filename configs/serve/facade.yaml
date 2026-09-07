@@ -9,3 +9,15 @@ ready_ttl_s: 15
 drain_timeout_s: 30
 max_repairs: 1
 workers: 1
+
+# Tool-permission guard (serving/guard.py): applied to every model response, self-hosted or frontier.
+# Denied patterns never reach a tool runtime whatever the model was told; limits turn an over-limit call
+# into an escalation; confidential system-prompt lines never come back out.
+tool_policy:
+  deny: ["delete_*", "*_delete", "transfer_*", "admin_*", "*_admin"]
+  limits:
+    issue_refund: {field: amount_zar, max: 100}
+  escalation_tool: handoff_to_human
+  refusal: "I can't do that from here. A colleague can help with that request."
+  unknown_tool_retries: 1
+  confidential_markers: ["[internal]", "[confidential]", "staff only"]

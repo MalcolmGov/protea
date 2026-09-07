@@ -23,6 +23,7 @@ from protea.providers.base import ModelProvider, ProviderError
 from protea.schemas.generation import GenerationRequest, GenerationResponse
 from protea.serving.config import ServeConfig
 from protea.serving.gate import MAX_REPAIR_ROUNDS, GateResult, generate_validated
+from protea.serving.guard import GuardedProvider
 from protea.serving.metrics import Metrics
 from protea.serving.openai_compat import (
     ChatCompletionRequest,
@@ -255,6 +256,8 @@ def create_app(cfg: ServeConfig, backend: ModelProvider, *, token: str | None = 
     """`router` is an optional protea.router.ModelRouter; when given, `/v1/route/*` is mounted."""
     if cfg.require_token and not token:
         raise ValueError("require_token is set but no token was provided (PROTEA_FACADE_TOKEN)")
+    if cfg.tool_policy is not None and not isinstance(backend, GuardedProvider):
+        backend = GuardedProvider(backend, cfg.tool_policy)
     state = FacadeState(cfg, backend, token)
     state.router = router
 
