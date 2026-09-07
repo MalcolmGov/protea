@@ -76,7 +76,7 @@ def security_run(
 
     cfg, cfg_hash, tasks, digest = _load(config, root)
     _paid_gate(cfg, tasks, provider, model, None, confirm)
-    prov = _build(provider, model, tasks)
+    prov = _build(provider, model, tasks, concurrency=cfg.concurrency)
     report = asyncio.run(
         run_benchmark(
             cfg,

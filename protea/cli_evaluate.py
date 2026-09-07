@@ -41,17 +41,37 @@ def _select(tasks, categories: str | None, limit: int | None, language: str | No
     return tasks[:limit] if limit else tasks
 
 
-def _build(name: str, model: str | None, tasks):
+def _build(name: str, model: str | None, tasks, *, concurrency: int = 1):
     from protea.evaluation.reference import ReferenceProvider
     from protea.providers import ProviderNotConfigured, build_provider
 
     if name == "reference":
         return ReferenceProvider(tasks)
+    overrides = {}
+    if name == "local":
+        overrides["threads"] = local_threads(concurrency)
     try:
-        return build_provider(name, model=model)
+        return build_provider(name, model=model, **overrides)
     except ProviderNotConfigured as exc:
         _fail(str(exc))
         return None
+
+
+def local_threads(concurrency: int) -> int | None:
+    """Torch threads per in-process generation when `concurrency` tasks run at once.
+
+    Without this every worker takes all cores (4 workers × 4 threads on a 4-core box oversubscribes it
+    four times over). An explicit PROTEA_LOCAL_THREADS wins.
+    """
+    import os
+
+    from protea.config import get_settings
+
+    explicit = get_settings().local_threads
+    if explicit:
+        return explicit
+    cores = os.cpu_count() or 1
+    return max(1, cores // max(1, concurrency))
 
 
 def _generator_models(root: Path) -> set[str]:
@@ -227,7 +247,7 @@ def evaluate_run(
         _fail("no tasks selected")
     jp = judge_provider or cfg.judge_provider
     _paid_gate(cfg, tasks, provider, model, jp, confirm)
-    prov = _build(provider, model, tasks)
+    prov = _build(provider, model, tasks, concurrency=cfg.concurrency)
     judge = _build(jp, judge_model or cfg.judge_model, tasks) if jp else None
     if judge is not None:
         problems = check_independence(judge, prov, _generator_models(root), cfg.judge_must_differ_from_generator)

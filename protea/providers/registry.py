@@ -106,6 +106,7 @@ def _build_local(s: ProteaSettings, model: str | None, kw: dict[str, Any], ov: d
         model or s.local_model,
         ov.pop("adapter", s.local_adapter),
         served_as=ov.pop("served_as", s.local_served_as),
+        threads=ov.pop("threads", s.local_threads),
         **kw,
         **ov,
     )

@@ -37,6 +37,7 @@ class ProteaSettings(BaseSettings):
     local_model: str = Field(default="Qwen/Qwen2.5-0.5B-Instruct", validation_alias=AliasChoices("PROTEA_LOCAL_MODEL"))
     local_adapter: str | None = Field(default=None, validation_alias=AliasChoices("PROTEA_LOCAL_ADAPTER"))
     local_served_as: str | None = Field(default=None, validation_alias=AliasChoices("PROTEA_LOCAL_SERVED_AS"))
+    local_threads: int | None = Field(default=None, validation_alias=AliasChoices("PROTEA_LOCAL_THREADS"))
     hf_token: str | None = None
     runpod_api_key: str | None = None
     mlflow_tracking_uri: str | None = None
