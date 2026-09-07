@@ -149,7 +149,10 @@ def apply_policy(policy: ToolPolicy, request: GenerationRequest, response: Gener
         content = policy.refusal
     unknown_only = bool(actions) and all(a.startswith("unknown:") for a in actions) and not kept
     out = response.model_copy(update={"tool_calls": kept, "content": content})
-    out.finish_reason = "tool_calls" if kept else ("stop" if out.finish_reason == "tool_calls" else out.finish_reason)
+    if kept:
+        out.finish_reason = "tool_calls"
+    elif out.finish_reason == "tool_calls":
+        out.finish_reason = "stop"
     return GuardOutcome(response=out, actions=actions, retry=unknown_only)
 
 
