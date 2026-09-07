@@ -204,6 +204,13 @@ def _paid_gate(cfg, tasks, provider: str, model: str | None, judge_provider: str
         _fail("re-run with --confirm to proceed")
 
 
+def _split_judge(judge: str | None) -> tuple[str | None, str | None]:
+    if not judge:
+        return None, None
+    provider, _, model = judge.partition(":")
+    return provider or None, model or None
+
+
 def progress_printer():
     """Build an ``on_result`` callback that prints one progress line per finished task to stderr."""
     from time import monotonic
@@ -245,8 +252,9 @@ def evaluate_run(
     per_category: int | None = typer.Option(
         None, help="Quick read: an even, deterministic sample of N tasks per category."
     ),
-    judge_provider: str | None = typer.Option(None, help="Overrides the config's judge provider."),
-    judge_model: str | None = typer.Option(None),
+    judge: str | None = typer.Option(
+        None, help="Overrides the config's judge as provider[:model], e.g. anthropic:claude-opus-5."
+    ),
     confirm: bool = typer.Option(False, "--confirm", help="Required for any provider that spends tokens."),
     label: str | None = typer.Option(None, help="Run id; defaults to a UTC timestamp."),
     max_tokens: int | None = typer.Option(None, help="Override the config's max_tokens (recorded in the config hash)."),
@@ -264,6 +272,7 @@ def evaluate_run(
     tasks = _select(tasks, categories, limit, language, per_category)
     if not tasks:
         _fail("no tasks selected")
+    judge_provider, judge_model = _split_judge(judge)
     jp = judge_provider or cfg.judge_provider
     _paid_gate(cfg, tasks, provider, model, jp, confirm)
     prov = _build(provider, model, tasks, concurrency=cfg.concurrency)

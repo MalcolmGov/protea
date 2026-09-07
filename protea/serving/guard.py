@@ -84,52 +84,72 @@ def _amount(call: ToolCall, limit: AmountLimit) -> float | None:
         return None
 
 
-def apply_policy(policy: ToolPolicy, request: GenerationRequest, response: GenerationResponse) -> GuardOutcome:
-    """Pure function: the guarded response and the actions taken. Does not call the model."""
-    declared = {t.name for t in request.tools or []}
-    fragments = policy.confidential_fragments(request)
+class _Context(BaseModel):
+    declared: set[str]
+    fragments: set[str]
+
+
+def _verdict(policy: ToolPolicy, ctx: _Context, call: ToolCall) -> tuple[str, str | None]:
+    """One of unknown | denied | over_limit | leak | ok, plus the escalation reason for over_limit."""
+    if call.name not in ctx.declared:
+        return "unknown", None
+    if policy.denied(call.name):
+        return "denied", None
+    limit = policy.limits.get(call.name)
+    amount = _amount(call, limit) if limit else None
+    if limit and amount is not None and amount > limit.max:
+        return "over_limit", f"{call.name} for {amount:g} exceeds the limit of {limit.max:g}"
+    if _leaks(str(call.arguments), ctx.fragments):
+        return "leak", None
+    return "ok", None
+
+
+def _filter_calls(
+    policy: ToolPolicy, ctx: _Context, calls: list[ToolCall]
+) -> tuple[list[ToolCall], list[str], list[str], bool]:
     kept: list[ToolCall] = []
     actions: list[str] = []
-    refuse = False
     escalate: list[str] = []
-    for call in response.tool_calls:
-        if call.name not in declared:
-            actions.append(f"unknown:{call.name}")
+    refuse = False
+    for call in calls:
+        verdict, reason = _verdict(policy, ctx, call)
+        if verdict == "ok":
+            kept.append(call)
             continue
-        if policy.denied(call.name):
-            actions.append(f"denied:{call.name}")
-            refuse = True
-            continue
-        limit = policy.limits.get(call.name)
-        amount = _amount(call, limit) if limit else None
-        if limit and amount is not None and amount > limit.max:
-            actions.append(f"over_limit:{call.name}")
-            escalate.append(f"{call.name} for {amount:g} exceeds the limit of {limit.max:g}")
-            continue
-        if _leaks(str(call.arguments), fragments):
-            actions.append(f"leak:{call.name}")
-            refuse = True
-            continue
-        kept.append(call)
+        actions.append(f"{verdict}:{call.name}")
+        refuse = refuse or verdict in {"denied", "leak"}
+        if reason:
+            escalate.append(reason)
+    return kept, actions, escalate, refuse
+
+
+def _escalate(policy: ToolPolicy, ctx: _Context, kept: list[ToolCall], reasons: list[str]) -> bool:
+    """Append the escalation call when the request declares one; otherwise the response must refuse."""
+    if not reasons:
+        return False
+    if policy.escalation_tool in ctx.declared and policy.escalation_tool not in {c.name for c in kept}:
+        kept.append(
+            ToolCall(id="guard_escalation", name=policy.escalation_tool, arguments={"reason": "; ".join(reasons)})
+        )
+        return False
+    return True
+
+
+def apply_policy(policy: ToolPolicy, request: GenerationRequest, response: GenerationResponse) -> GuardOutcome:
+    """Pure function: the guarded response and the actions taken. Does not call the model."""
+    ctx = _Context(declared={t.name for t in request.tools or []}, fragments=policy.confidential_fragments(request))
+    kept, actions, escalate, refuse = _filter_calls(policy, ctx, response.tool_calls)
     content = response.content
-    if _leaks(content, fragments):
+    leaked = _leaks(content, ctx.fragments)
+    if leaked:
         actions.append("leak")
         content = policy.refusal
-    if escalate:
-        if policy.escalation_tool in declared and policy.escalation_tool not in {c.name for c in kept}:
-            kept.append(
-                ToolCall(id="guard_escalation", name=policy.escalation_tool, arguments={"reason": "; ".join(escalate)})
-            )
-        else:
-            refuse = True
-    if refuse and not kept and not (content and content != response.content):
+    refuse = _escalate(policy, ctx, kept, escalate) or refuse
+    if refuse and not kept and not leaked:
         content = policy.refusal
     unknown_only = bool(actions) and all(a.startswith("unknown:") for a in actions) and not kept
     out = response.model_copy(update={"tool_calls": kept, "content": content})
-    if kept:
-        out.finish_reason = "tool_calls"
-    elif out.finish_reason == "tool_calls":
-        out.finish_reason = "stop"
+    out.finish_reason = "tool_calls" if kept else ("stop" if out.finish_reason == "tool_calls" else out.finish_reason)
     return GuardOutcome(response=out, actions=actions, retry=unknown_only)
 
 

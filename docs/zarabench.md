@@ -41,7 +41,7 @@ One `EvalTask` per line (`protea/evaluation/tasks.py`): `id`, `category`, `langu
 
 The roadmap requires two baselines before training: the unmodified candidate (Qwen3-8B) and one frontier model. Neither is run automatically.
 
-- **Frontier.** `protea evaluate run --provider anthropic --model claude-opus-5 --judge-provider anthropic --judge-model claude-sonnet-5 --confirm`. Pre-flight estimate for the full suite: ≈640 k input tokens, ≈85 k output tokens, ≈USD 5 at the prices in the config (update them first). The judge adds roughly the same input volume again. Task prompts contain catalogue system prompts and business knowledge; that content leaves the estate.
+- **Frontier.** `protea evaluate run --provider anthropic --model claude-opus-5 --judge anthropic:claude-sonnet-5 --confirm`. Pre-flight estimate for the full suite: ≈640 k input tokens, ≈85 k output tokens, ≈USD 5 at the prices in the config (update them first). The judge adds roughly the same input volume again. Task prompts contain catalogue system prompts and business knowledge; that content leaves the estate.
 - **Candidate.** Serve `Qwen/Qwen3-8B` with vLLM (Phase 5 container or any OpenAI-compatible host), set `PROTEA_INFERENCE_URL`, then `protea evaluate run --provider protea --model Qwen/Qwen3-8B --confirm`. Needs a 24 GB-class GPU for ≈1–2 hours, or a hosted endpoint.
 - **Judge independence.** The judge must differ from the model under test and from any `generator_models` in `registry/datasets.json`.
 
