@@ -6,6 +6,7 @@ name: Run training (RunPod)
 #   HF_TOKEN              - your Hugging Face read token
 #   R2_ACCESS_KEY_ID      - Cloudflare R2 access key id
 #   R2_SECRET_ACCESS_KEY  - Cloudflare R2 secret access key
+# And upload the two dataset files (train.jsonl, validation.jsonl) to the ROOT of your R2 bucket once.
 # Then run this workflow (Actions → Run training (RunPod) → Run workflow) with your bucket + endpoint.
 # It defaults to a dry-run that rents nothing; choose "launch" to actually rent the GPU (~USD 2).
 on:
@@ -31,6 +32,12 @@ concurrency:
   group: run-training
   cancel-in-progress: false
 
+env:
+  AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+  AWS_ENDPOINT_URL: ${{ inputs.endpoint }}
+  AWS_DEFAULT_REGION: auto
+
 jobs:
   run:
     runs-on: ubuntu-latest
@@ -52,21 +59,28 @@ jobs:
           import os, pathlib, yaml
           p = pathlib.Path("configs/remote/runpod-a100.yaml")
           cfg = yaml.safe_load(p.read_text())
-          cfg["storage"]["uri"] = f"s3://{os.environ['BUCKET']}/agent-training"
+          cfg["storage"]["uri"] = f"s3://{os.environ['BUCKET']}"
           cfg["storage"]["endpoint"] = os.environ["ENDPOINT"]
           p.write_text(yaml.safe_dump(cfg, sort_keys=False))
           print(p.read_text())
           PY
 
-      - name: Seed the dataset to R2
+      # The dataset is gitignored (proprietary; kept out of the public repo). You upload the two files to the
+      # bucket root; this places them at the paths the trainer and the registry pin expect.
+      - name: Fetch the dataset from R2
+        env:
+          BUCKET: ${{ inputs.bucket }}
+        run: |
+          mkdir -p protea_data/agent-training/0.1.0
+          aws s3 cp "s3://${BUCKET}/train.jsonl"      protea_data/agent-training/0.1.0/train.jsonl
+          aws s3 cp "s3://${BUCKET}/validation.jsonl" protea_data/agent-training/0.1.0/validation.jsonl
+
+      # Put the dataset where the pod's entrypoint pulls it from (PROTEA_STORAGE/protea_data).
+      - name: Seed the dataset for the pod
         if: ${{ inputs.confirm == 'launch' }}
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          AWS_ENDPOINT_URL: ${{ inputs.endpoint }}
-          AWS_DEFAULT_REGION: auto
           BUCKET: ${{ inputs.bucket }}
-        run: aws s3 sync protea_data "s3://${BUCKET}/agent-training/protea_data"
+        run: aws s3 sync protea_data "s3://${BUCKET}/protea_data"
 
       - name: Plan (dry-run — rents nothing)
         if: ${{ inputs.confirm != 'launch' }}
