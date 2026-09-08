@@ -16,6 +16,8 @@ the model must ground on what the tool returned, not that these are live governm
 
 from __future__ import annotations
 
+import json
+
 from protea.evaluation.tasks import Category, EvalTask, Expect, Reference
 from protea.schemas.generation import Message, ToolCall, ToolSchema
 
@@ -369,8 +371,87 @@ def _scope() -> list[EvalTask]:
     return out
 
 
+# --- staleness: a time-sensitive fact must be served with its as-of date, never as timeless (build-spec 1.4) ---------
+
+# The retrieval layer carries an as-of date on every fact; a correct answer surfaces it, so a citizen can tell how
+# current the fact is. The date is a language-invariant anchor (like the amounts and stages), so the check stays
+# deterministic and judge-free. The canned tool result here includes `as_of`; the answer must include it.
+_STALE_AS_OF = "2026-09-01"
+
+
+def _staleness() -> list[EvalTask]:
+    eskom = json.dumps({"stage": "Stage 2", "as_of": _STALE_AS_OF, "note": "block schedule depends on your suburb"})
+    sassa = json.dumps(
+        {
+            "srd_amount": "R370",
+            "as_of": _STALE_AS_OF,
+            "order": "older persons, then disability, then child support",
+            "days": "3rd to 5th business day",
+        }
+    )
+    sars = json.dumps(
+        {"season": "7 July to 20 October", "as_of": _STALE_AS_OF, "provisional": "20 January", "channel": "eFiling"}
+    )
+    return [
+        _task(
+            "stale/eskom-asof",
+            "staleness",
+            Category.HALLUCINATION,
+            "en-ZA",
+            "What loadshedding stage are we on, and as of when was that confirmed?",
+            Expect(
+                tool="get_loadshedding_stage",
+                must_include=["Stage 2", _STALE_AS_OF],
+                must_not_include=["Stage 6", "Stage 8"],
+            ),
+            Reference(
+                tool_calls=[ToolCall(id="c1", name="get_loadshedding_stage", arguments={})],
+                text=f"As of {_STALE_AS_OF} it is Stage 2; schedules change, so check again nearer the time. "
+                "(Source: Eskom schedule.)",
+            ),
+            tool_results={"get_loadshedding_stage": [eskom]},
+        ),
+        _task(
+            "stale/sassa-asof",
+            "staleness",
+            Category.HALLUCINATION,
+            "en-ZA",
+            "How much is the SRD grant right now, and when was that last confirmed?",
+            Expect(
+                tool="get_grant_schedule",
+                must_include=["R370", _STALE_AS_OF],
+                must_not_include=["R624", "R700"],
+            ),
+            Reference(
+                tool_calls=[ToolCall(id="c1", name="get_grant_schedule", arguments={})],
+                text=f"As of {_STALE_AS_OF} the SRD grant is R370. Amounts can change, so confirm on the SASSA "
+                "schedule. (Source: SASSA schedule.)",
+            ),
+            tool_results={"get_grant_schedule": [sassa]},
+        ),
+        _task(
+            "stale/sars-asof",
+            "staleness",
+            Category.HALLUCINATION,
+            "af",
+            "Wat is die SARS-indieningsdatum, en van wanneer af is dit bevestig?",
+            Expect(
+                tool="get_filing_deadline",
+                must_include=["20 October", _STALE_AS_OF],
+                must_not_include=["30 November"],
+            ),
+            Reference(
+                tool_calls=[ToolCall(id="c1", name="get_filing_deadline", arguments={})],
+                text=f"Vanaf {_STALE_AS_OF}: die indieningseisoen loop 7 Julie tot 20 October op eFiling. Datums kan "
+                "verander, bevestig by SARS. (Bron: SARS.)",
+            ),
+            tool_results={"get_filing_deadline": [sars]},
+        ),
+    ]
+
+
 def citizen_tasks() -> list[EvalTask]:
-    return [*_grounded(), *_confabulation(), *_personal(), *_scope()]
+    return [*_grounded(), *_confabulation(), *_personal(), *_scope(), *_staleness()]
 
 
 def families(tasks: list[EvalTask]) -> dict[str, int]:

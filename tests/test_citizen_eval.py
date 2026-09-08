@@ -38,6 +38,7 @@ def test_families_and_languages_are_the_expected_government_set():
         "confabulation",
         "personal-data",
         "scope",  # anti-hallucination + scope
+        "staleness",  # a time-sensitive fact must carry its as-of date
     }
     langs = set(languages(tasks))
     assert {"en-ZA", "af", "zu"} <= langs
