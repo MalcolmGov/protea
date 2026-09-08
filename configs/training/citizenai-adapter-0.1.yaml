@@ -1,0 +1,44 @@
+# CitizenAI government adapter (Pillar 11, ADR-012 · build-spec Phase 2). A separate LoRA on the SHARED Qwen3-8B
+# base, served next to the commercial adapter via multi-LoRA — it learns grounding/refusal/citation behaviour, not
+# fact values. Runs only on a rented GPU after an explicit `--dry-run` review (execution boundary).
+#
+# The dataset is GENERATED, not mined: `protea dataset author-citizen-train` writes the train/validation splits
+# below (a deterministic, reproducible seed — there is no configs/datasets/*.yaml build config because there are no
+# mined sources). Until the dataset key is registered, launch with `--allow-unregistered`; register it before a
+# promotion run. The seed is small (en-ZA v0) and grows as verified languages and volume land.
+model:
+  base_model: Qwen/Qwen3-8B
+  trust_remote_code: false
+  load_in_4bit: true
+training:
+  method: qlora
+  epochs: 3
+  learning_rate: 1.0e-4
+  max_sequence_length: 6144
+  per_device_batch_size: 2
+  gradient_accumulation_steps: 8
+  gradient_checkpointing: true
+  warmup_ratio: 0.03
+  lr_scheduler: cosine
+  seed: 42
+  bf16: true
+  save_steps: 50
+  eval_steps: 50
+lora:
+  rank: 32
+  alpha: 64
+  dropout: 0.05
+dataset:
+  train: protea_data/citizenai/0.1/train.jsonl
+  validation: protea_data/citizenai/0.1/validation.jsonl
+  dataset_key: citizenai-0.1.0
+output:
+  dir: checkpoints/protea-citizenai-0.1
+  experiment_name: protea-citizenai-0.1-qwen3-8b-qlora
+  model_family: protea-citizenai
+  tags: {base: qwen3-8b, method: qlora, domain: government}
+budget:
+  max_runtime_minutes: 300
+  max_cost_usd: 40
+  idle_shutdown_minutes: 15
+  checkpoint_before_shutdown: true
