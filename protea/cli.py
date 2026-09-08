@@ -194,6 +194,31 @@ def dataset_stats(path: Path = typer.Argument(..., exists=True)) -> None:
         typer.echo(f"{label:<15} " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
 
 
+@dataset_app.command("author-citizen-train")
+def dataset_author_citizen_train(
+    out_dir: Path = typer.Option(
+        Path("protea_data/citizenai/0.1"), help="Where the train/validation split files are written."
+    ),
+) -> None:
+    """Generate the deterministic CitizenAI government-adapter training seed (build-spec Phase 2.1, en-ZA v0)."""
+    from protea.citizenai.dataset import citizen_training_examples, families
+    from protea.schemas.examples import Split
+
+    examples = citizen_training_examples()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    counts: dict[str, int] = {}
+    for split, name in ((Split.TRAIN, "train.jsonl"), (Split.VALIDATION, "validation.jsonl")):
+        rows = [e for e in examples if e.metadata.split == split]
+        (out_dir / name).write_text("".join(e.model_dump_json() + "\n" for e in rows), encoding="utf-8")
+        counts[split.value] = len(rows)
+    typer.echo(
+        f"wrote {len(examples)} examples to {out_dir}: "
+        + ", ".join(f"{k}={v}" for k, v in counts.items())
+        + " | families "
+        + ", ".join(f"{k}={v}" for k, v in families(examples).items())
+    )
+
+
 @dataset_app.command("build")
 def dataset_build(
     config: Path = typer.Option(
