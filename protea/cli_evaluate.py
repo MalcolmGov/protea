@@ -138,6 +138,27 @@ def evaluate_author(
     typer.echo(f"wrote {st['total']} tasks to {out}: " + ", ".join(f"{k}={v}" for k, v in st["by_category"].items()))
 
 
+@evaluate_app.command("author-citizen")
+def evaluate_author_citizen(
+    out: Path = typer.Option(Path("evaluation/citizen/0.1/tasks.jsonl")),
+) -> None:
+    """Generate the CitizenAI government-services slice (deterministic; ADR-012) and prove every reference passes."""
+    from protea.evaluation.citizen import citizen_tasks, families, languages
+    from protea.evaluation.tasks import write_tasks
+
+    tasks = citizen_tasks()
+    failures = _reference_failures(tasks)
+    if failures:
+        _fail("reference answers that do not pass their own checks:\n  " + "\n  ".join(failures[:20]))
+    write_tasks(tasks, out)
+    typer.echo(
+        f"wrote {len(tasks)} tasks to {out}: families "
+        + ", ".join(f"{k}={v}" for k, v in families(tasks).items())
+        + " | languages "
+        + ", ".join(f"{k}={v}" for k, v in languages(tasks).items())
+    )
+
+
 def _reference_failures(tasks) -> list[str]:
     from protea.config.models import CategoryWeight, EvaluationConfig
     from protea.evaluation.reference import ReferenceProvider
