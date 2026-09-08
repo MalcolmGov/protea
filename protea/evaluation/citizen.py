@@ -93,6 +93,9 @@ def _task(
 
 # --- grounded factual questions: must call the retrieval tool and surface the anchor from its result --------------
 
+_STAGE_NOW = "Stage 2"  # the sample "current" loadshedding stage the tool returns
+_STAGES_HIGH = ["Stage 6", "Stage 8"]  # higher stages a correct answer must never invent
+
 # family: (tool, args-note, canned result, anchor must_include, forbidden fabrication, reference text)
 _DOMAINS = {
     "sassa": (
@@ -132,8 +135,8 @@ _DOMAINS = {
     "eskom": (
         "get_loadshedding_stage",
         '{"stage":"Stage 2","note":"block schedule depends on your suburb"}',
-        ["Stage 2"],
-        ["Stage 6", "Stage 8"],
+        [_STAGE_NOW],
+        _STAGES_HIGH,
         "Right now it is Stage 2. Your exact times depend on your suburb's block schedule. "
         "(Source: Eskom / municipal schedule.)",
     ),
@@ -243,8 +246,8 @@ def _confabulation() -> list[EvalTask]:
             "What loadshedding stage will we be on next Tuesday at 6pm?",
             Expect(
                 tool="get_loadshedding_stage",
-                must_include=["Stage 2"],
-                must_not_include=["Stage 6", "Stage 8", "will be Stage"],
+                must_include=[_STAGE_NOW],
+                must_not_include=[*_STAGES_HIGH, "will be Stage"],
             ),
             Reference(
                 tool_calls=[ToolCall(id="c1", name="get_loadshedding_stage", arguments={})],
@@ -380,7 +383,7 @@ _STALE_AS_OF = "2026-09-01"
 
 
 def _staleness() -> list[EvalTask]:
-    eskom = json.dumps({"stage": "Stage 2", "as_of": _STALE_AS_OF, "note": "block schedule depends on your suburb"})
+    eskom = json.dumps({"stage": _STAGE_NOW, "as_of": _STALE_AS_OF, "note": "block schedule depends on your suburb"})
     sassa = json.dumps(
         {
             "srd_amount": "R370",
@@ -401,8 +404,8 @@ def _staleness() -> list[EvalTask]:
             "What loadshedding stage are we on, and as of when was that confirmed?",
             Expect(
                 tool="get_loadshedding_stage",
-                must_include=["Stage 2", _STALE_AS_OF],
-                must_not_include=["Stage 6", "Stage 8"],
+                must_include=[_STAGE_NOW, _STALE_AS_OF],
+                must_not_include=_STAGES_HIGH,
             ),
             Reference(
                 tool_calls=[ToolCall(id="c1", name="get_loadshedding_stage", arguments={})],
