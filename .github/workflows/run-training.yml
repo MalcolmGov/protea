@@ -1,0 +1,87 @@
+name: Run training (RunPod)
+
+# One-click remote training. Set these repository secrets first
+# (Settings → Secrets and variables → Actions → New repository secret):
+#   RUNPOD_API_KEY        - your RunPod API key
+#   HF_TOKEN              - your Hugging Face read token
+#   R2_ACCESS_KEY_ID      - Cloudflare R2 access key id
+#   R2_SECRET_ACCESS_KEY  - Cloudflare R2 secret access key
+# Then run this workflow (Actions → Run training (RunPod) → Run workflow) with your bucket + endpoint.
+# It defaults to a dry-run that rents nothing; choose "launch" to actually rent the GPU (~USD 2).
+on:
+  workflow_dispatch:
+    inputs:
+      bucket:
+        description: R2 bucket name (e.g. protea-runs)
+        required: true
+      endpoint:
+        description: R2 S3 endpoint, e.g. https://<account-id>.r2.cloudflarestorage.com
+        required: true
+      confirm:
+        description: dry-run prints the plan and cost only; launch rents an A100 (~USD 2)
+        required: true
+        default: dry-run
+        type: choice
+        options: [dry-run, launch]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: run-training
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Hash-pinned, wheels-only install (no setup-script execution, locked versions) — the launcher needs only
+      # the base deps; protea itself is imported from source via PYTHONPATH.
+      - run: "pip install --only-binary :all: --require-hashes -r requirements/base.txt"
+
+      - name: Point the config at your R2 bucket and endpoint
+        env:
+          BUCKET: ${{ inputs.bucket }}
+          ENDPOINT: ${{ inputs.endpoint }}
+        run: |
+          python - <<'PY'
+          import os, pathlib, yaml
+          p = pathlib.Path("configs/remote/runpod-a100.yaml")
+          cfg = yaml.safe_load(p.read_text())
+          cfg["storage"]["uri"] = f"s3://{os.environ['BUCKET']}/agent-training"
+          cfg["storage"]["endpoint"] = os.environ["ENDPOINT"]
+          p.write_text(yaml.safe_dump(cfg, sort_keys=False))
+          print(p.read_text())
+          PY
+
+      - name: Seed the dataset to R2
+        if: ${{ inputs.confirm == 'launch' }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_ENDPOINT_URL: ${{ inputs.endpoint }}
+          AWS_DEFAULT_REGION: auto
+          BUCKET: ${{ inputs.bucket }}
+        run: aws s3 sync protea_data "s3://${BUCKET}/agent-training/protea_data"
+
+      - name: Plan (dry-run — rents nothing)
+        if: ${{ inputs.confirm != 'launch' }}
+        run: |
+          PYTHONPATH=. python -m protea.cli train remote \
+            --config configs/training/protea-agent-8b-qlora.yaml \
+            --remote configs/remote/runpod-a100.yaml
+
+      - name: Launch (rents an A100, ~USD 2)
+        if: ${{ inputs.confirm == 'launch' }}
+        env:
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          PROTEA_STORAGE_CREDENTIALS: ${{ secrets.R2_ACCESS_KEY_ID }}:${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          PYTHONPATH=. python -m protea.cli train remote \
+            --config configs/training/protea-agent-8b-qlora.yaml \
+            --remote configs/remote/runpod-a100.yaml --confirm

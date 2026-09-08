@@ -141,6 +141,51 @@ def test_remote_config_requires_provider_section():
         RemoteJobConfig(provider="runpod", gpu="l4", storage=storage)
 
 
+def test_runpod_volume_does_not_shadow_the_code(catalogue):
+    """The pod volume must mount off the image's code dir (/workspace/protea), else the baked code is hidden."""
+    cfg = load_config(QLORA, "training")
+    rp = load_config(REPO / "configs/remote/runpod-a100.yaml", "remote")
+    req = PlanRequest(
+        cfg=cfg,
+        cfg_path=str(QLORA),
+        cfg_hash=config_hash(cfg),
+        estimate=estimate(cfg, rp, catalogue["a100-80gb"], 1000),
+        run_id="r1",
+    )
+    mutation = build_adapter(rp).plan(req).artifacts["runpod-deploy.graphql"]
+    assert 'volumeMountPath: "/runpod-volume"' in mutation
+    assert 'volumeMountPath: "/workspace"' not in mutation
+
+
+def test_runpod_launch_expands_secret_placeholders(catalogue, tmp_path, monkeypatch):
+    """launch() substitutes ${SECRET} from the environment in memory; the on-disk artefact keeps placeholders."""
+    from protea.training.remote import write_artifacts
+
+    cfg = load_config(QLORA, "training")
+    rp = load_config(REPO / "configs/remote/runpod-a100.yaml", "remote")
+    req = PlanRequest(
+        cfg=cfg,
+        cfg_path=str(QLORA),
+        cfg_hash=config_hash(cfg),
+        estimate=estimate(cfg, rp, catalogue["a100-80gb"], 1000),
+        run_id="r1",
+    )
+    adapter = build_adapter(rp)
+    plan = adapter.plan(req)
+    write_artifacts(plan, tmp_path)
+
+    monkeypatch.setenv("HF_TOKEN", "hf_realvalue123")
+    monkeypatch.setenv("PROTEA_STORAGE_CREDENTIALS", "AKIAKEYID:secretpart")
+    resolved = adapter._resolved_mutation(tmp_path)
+    assert '{ key: "HF_TOKEN", value: "hf_realvalue123" }' in resolved
+    assert '{ key: "PROTEA_STORAGE_CREDENTIALS", value: "AKIAKEYID:secretpart" }' in resolved
+    assert "${HF_TOKEN}" not in resolved
+    # The artefact on disk still carries only placeholders — no secret is ever written down.
+    on_disk = (tmp_path / "runpod-deploy.graphql").read_text(encoding="utf-8")
+    assert 'value: "${HF_TOKEN}"' in on_disk
+    assert "hf_realvalue123" not in on_disk
+
+
 def test_train_entrypoint_is_wired_and_valid():
     """The RunPod wrapper exists, is shipped by the image, and does the persistence work the plan promises."""
     import shutil
