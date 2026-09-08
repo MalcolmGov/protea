@@ -37,3 +37,10 @@ real connector is wired **and** a named owner has verified the source. Sample da
 answer and appends `fact.citation()`; CitizenBench checks — deterministically, no judge — that the answer surfaces
 the fact's language-invariant anchors (`R370`, `20 October`, `uFiling`, `R140`, `Stage 2`) and refuses to invent.
 Real connectors replace `StubRetrieval` behind the same interface, one verified source at a time.
+
+The tools the agent actually calls are wired in `protea/citizenai/connectors.py`: `build_registry()` maps each
+tool to a connector, `dispatch(registry, call)` answers a `ToolCall` from retrieval, and every result carries a
+`_status` of `sample` / `blocked` / `live`. `statuses(registry)` is the deployment gate's view — a domain must be
+`live` (a verified real source) before it is served; today only the operational `handoff_to_official` is `live`,
+the six factual domains are `sample`, and `lookup_my_payment` is `blocked` (needs a verified-records bridge). The
+personal tool never returns an invented payment — it asks for a 13-digit ID or hands off.
