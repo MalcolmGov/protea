@@ -39,7 +39,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -e .
+      # Hash-pinned, wheels-only install (no setup-script execution, locked versions) — the launcher needs only
+      # the base deps; protea itself is imported from source via PYTHONPATH.
+      - run: "pip install --only-binary :all: --require-hashes -r requirements/base.txt"
 
       - name: Point the config at your R2 bucket and endpoint
         env:
@@ -69,7 +71,7 @@ jobs:
       - name: Plan (dry-run — rents nothing)
         if: ${{ inputs.confirm != 'launch' }}
         run: |
-          python -m protea.cli train remote \
+          PYTHONPATH=. python -m protea.cli train remote \
             --config configs/training/protea-agent-8b-qlora.yaml \
             --remote configs/remote/runpod-a100.yaml
 
@@ -80,6 +82,6 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           PROTEA_STORAGE_CREDENTIALS: ${{ secrets.R2_ACCESS_KEY_ID }}:${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
-          python -m protea.cli train remote \
+          PYTHONPATH=. python -m protea.cli train remote \
             --config configs/training/protea-agent-8b-qlora.yaml \
             --remote configs/remote/runpod-a100.yaml --confirm
