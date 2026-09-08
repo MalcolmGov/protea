@@ -190,6 +190,7 @@ class StorageSpec(BaseModel):
 
     kind: Literal["s3", "azure_blob", "pvc", "rsync"]
     uri: str  # s3://bucket/prefix, https://account.blob.core.windows.net/container, pvc name, or user@host:/path
+    endpoint: str | None = None  # S3-compatible endpoint for non-AWS stores (Cloudflare R2, MinIO); None => AWS S3
 
 
 class SshSection(BaseModel):

@@ -4,6 +4,12 @@ gpu: a100-80gb
 gpu_count: 1
 image: ghcr.io/malcolmgov/protea-train:latest
 spot: false
-storage: {kind: s3, uri: s3://protea-runs/agent-training}
+# Checkpoints and the trained adapter sync to Cloudflare R2 (S3-compatible), so they outlive the disposable pod.
+# Fill in your own bucket and account endpoint below; the R2 access key/secret go in PROTEA_STORAGE_CREDENTIALS
+# (set in the shell at launch, never committed here). R2 uses region "auto".
+storage:
+  kind: s3
+  uri: s3://YOUR_R2_BUCKET/agent-training
+  endpoint: https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
 checkpoint_sync_minutes: 10
 runpod: {cloud_type: SECURE, volume_gb: 100, container_disk_gb: 50}

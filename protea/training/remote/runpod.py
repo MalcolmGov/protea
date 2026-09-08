@@ -50,6 +50,10 @@ class RunPodAdapter(RemoteAdapter):
             ("HF_TOKEN", "${HF_TOKEN}"),
             ("PROTEA_STORAGE_CREDENTIALS", "${PROTEA_STORAGE_CREDENTIALS}"),
         ]
+        # Non-AWS S3 stores (Cloudflare R2, MinIO) need the endpoint; aws-cli/boto3 read it from AWS_ENDPOINT_URL.
+        # It is a plain URL, not a secret, so it is embedded directly rather than referenced by name.
+        if self.remote.storage.endpoint:
+            env_pairs.append(("AWS_ENDPOINT_URL", self.remote.storage.endpoint))
         env = ", ".join(f'{{ key: "{k}", value: "{v}" }}' for k, v in env_pairs)
         mutation = DEPLOY_MUTATION.format(
             cloud_type=rp.cloud_type,

@@ -62,6 +62,8 @@ Artefacts are written under `runs/remote/<experiment>-<provider>/` for review: `
 
 Before the first paid run you also need: the training image (Phase 5), the `protea-storage` sync helper or an rsync target, `HF_TOKEN` in the host environment, and a ZaraBench baseline of the unmodified base model to compare against (Phase 3 boundary).
 
+**Checkpoint storage.** Checkpoints and the trained adapter must land on a store that outlives the disposable pod. `configs/remote/runpod-a100.yaml` uses Cloudflare R2 (S3-compatible): set `storage.uri` to your bucket, `storage.endpoint` to `https://<account-id>.r2.cloudflarestorage.com`, and put the R2 access key/secret in `PROTEA_STORAGE_CREDENTIALS` at launch (never in the file). The endpoint is passed to the job as `AWS_ENDPOINT_URL`, which `aws s3 sync` and boto3 honour; R2 uses region `auto`. Plain AWS S3 needs no `endpoint`. The `protea storage pull` helper you run afterwards reads the same `AWS_ENDPOINT_URL` from your shell to fetch the adapter back.
+
 ## After a run
 
 1. `protea evaluate run --provider protea --model <served adapter>` once the adapter is served (Phase 5).

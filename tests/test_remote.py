@@ -131,5 +131,33 @@ def test_remote_config_requires_provider_section():
     from protea.config.models import RemoteJobConfig, StorageSpec
 
     storage = StorageSpec(kind="s3", uri="s3://x")
+    assert storage.endpoint is None
     with pytest.raises(ValueError, match="requires a `runpod` section"):
         RemoteJobConfig(provider="runpod", gpu="l4", storage=storage)
+
+
+def test_runpod_carries_s3_compatible_endpoint(catalogue):
+    """A non-AWS S3 store (Cloudflare R2) surfaces its endpoint as AWS_ENDPOINT_URL and in the plan summary."""
+    endpoint = "https://acct123.r2.cloudflarestorage.com"
+    cfg = load_config(QLORA, "training")
+    base = load_config(REPO / "configs/remote/runpod-a100.yaml", "remote")
+    remote = base.model_copy(deep=True)
+    remote.storage = remote.storage.model_copy(update={"uri": "s3://my-bucket/agent-training", "endpoint": endpoint})
+    req = PlanRequest(
+        cfg=cfg,
+        cfg_path=str(QLORA),
+        cfg_hash=config_hash(cfg),
+        estimate=estimate(cfg, remote, catalogue["a100-80gb"], 1_000_000),
+        run_id="r2",
+    )
+    plan = build_adapter(remote).plan(req)
+    mutation = plan.artifacts["runpod-deploy.graphql"]
+    assert f'{{ key: "AWS_ENDPOINT_URL", value: "{endpoint}" }}' in mutation
+    assert endpoint in "\n".join(plan.summary_lines())
+    assert endpoint not in mutation.replace(f'value: "{endpoint}"', "")  # only the env value, nowhere unexpected
+
+    # A plain AWS S3 store (no endpoint) does not emit AWS_ENDPOINT_URL.
+    aws = remote.model_copy(deep=True)
+    aws.storage = aws.storage.model_copy(update={"endpoint": None})
+    aws_mutation = build_adapter(aws).plan(req).artifacts["runpod-deploy.graphql"]
+    assert "AWS_ENDPOINT_URL" not in aws_mutation
