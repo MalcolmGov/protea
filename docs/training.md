@@ -64,6 +64,8 @@ Before the first paid run you also need: the training image (Phase 5), the `prot
 
 **Checkpoint storage.** Checkpoints and the trained adapter must land on a store that outlives the disposable pod. `configs/remote/runpod-a100.yaml` uses Cloudflare R2 (S3-compatible): set `storage.uri` to your bucket, `storage.endpoint` to `https://<account-id>.r2.cloudflarestorage.com`, and put the R2 access key/secret in `PROTEA_STORAGE_CREDENTIALS` at launch (never in the file). The endpoint is passed to the job as `AWS_ENDPOINT_URL`, which `aws s3 sync` and boto3 honour; R2 uses region `auto`. Plain AWS S3 needs no `endpoint`. The `protea storage pull` helper you run afterwards reads the same `AWS_ENDPOINT_URL` from your shell to fetch the adapter back.
 
+**How the pod persists its work.** The training image runs `deployment/protea/entrypoint-train.sh`. It reads everything from the environment the adapter sets, then: parses `PROTEA_STORAGE_CREDENTIALS` (format `<access_key_id>:<secret_access_key>`) into the AWS env vars; pulls the dataset and any prior checkpoints from `PROTEA_STORAGE`; streams checkpoints back every `checkpoint_sync_minutes`; traps `SIGTERM` to checkpoint before exit; wraps the trainer in `timeout` at the runtime limit; and pushes the final adapter before exiting. So the dataset must be **seeded to storage first** (`protea storage push protea_data <uri>`), and the pod self-terminates after the run only if you also pass it `RUNPOD_API_KEY` (opt-in — the launch does not inject it; otherwise stop the pod yourself once the final sync line prints).
+
 ## After a run
 
 1. `protea evaluate run --provider protea --model <served adapter>` once the adapter is served (Phase 5).

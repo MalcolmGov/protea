@@ -38,7 +38,12 @@ class RunPodAdapter(RemoteAdapter):
         plan = self._base_plan(
             req,
             env_names=["RUNPOD_API_KEY"],
-            safeguards=["the container entrypoint enforces the runtime limit and terminates the pod when the run ends"],
+            safeguards=[
+                "entrypoint-train.sh wraps the trainer in `timeout` at the runtime limit, streams checkpoints to "
+                "storage while it runs, and pushes the final adapter before exit",
+                "the pod self-terminates after the run only when RUNPOD_API_KEY is passed to it (opt-in; the launch "
+                "does not inject it by default)",
+            ],
         )
         gpu_type = RUNPOD_GPU_IDS.get(self.remote.gpu, self.remote.gpu)
         env_pairs = [
@@ -47,6 +52,7 @@ class RunPodAdapter(RemoteAdapter):
             ("PROTEA_STORAGE", self.remote.storage.uri),
             ("PROTEA_MAX_RUNTIME_MINUTES", str(plan.max_runtime_minutes)),
             ("PROTEA_IDLE_SHUTDOWN_MINUTES", str(plan.idle_shutdown_minutes)),
+            ("PROTEA_SYNC_MINUTES", str(self.remote.checkpoint_sync_minutes)),
             ("HF_TOKEN", "${HF_TOKEN}"),
             ("PROTEA_STORAGE_CREDENTIALS", "${PROTEA_STORAGE_CREDENTIALS}"),
         ]
@@ -63,7 +69,9 @@ class RunPodAdapter(RemoteAdapter):
             gpu_type=gpu_type,
             name=f"protea-{cfg.output.experiment_name}-{run_id}",
             image=self.remote.image,
-            docker_args=plan.command.replace('"', '\\"'),
+            # The image's entrypoint (bash -lc) runs this; the wrapper builds the trainer command from PROTEA_CONFIG
+            # / PROTEA_RUN_ID and handles credentials, sync, the runtime limit and the final push.
+            docker_args="entrypoint-train.sh",
             env=env,
         )
         plan.artifacts = {"runpod-deploy.graphql": mutation}

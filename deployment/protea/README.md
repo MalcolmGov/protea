@@ -4,7 +4,7 @@
 |---|---|
 | `Dockerfile.infer` + `entrypoint-infer.sh` | vLLM OpenAI-compatible engine; non-root; adapter mounted at `/adapters`, weights in `/data/hf`; SIGTERM drains |
 | `Dockerfile.facade` | CPU facade (`protea serve facade`): auth, validation gate, `/healthz` `/readyz` `/metrics` |
-| `Dockerfile.train` | image referenced by the remote job adapters (`ghcr.io/malcolmgov/protea-train`) |
+| `Dockerfile.train` + `entrypoint-train.sh` | image referenced by the remote job adapters (`ghcr.io/malcolmgov/protea-train`); the entrypoint loads object-store credentials, pulls the dataset, streams checkpoints to storage, enforces the runtime limit and pushes the final adapter |
 | `docker-compose.yml` | engine + facade on one GPU host |
 
 See `docs/inference.md` for wiring aria's runtime (`MIAI_MODEL_GATEWAY_URL`) to the facade, sizing and the execution boundary.
