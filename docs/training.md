@@ -68,8 +68,24 @@ Before the first paid run you also need: the training image (Phase 5), the `prot
 
 **One-click run (no local setup).** `.github/workflows/run-training.yml` seeds the dataset and launches the run from GitHub Actions, so no clone, Python, or AWS CLI is needed locally. Add four repository secrets — `RUNPOD_API_KEY`, `HF_TOKEN`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` — then run the workflow with your bucket and endpoint as inputs. It defaults to a `dry-run` (prints the plan and cost, rents nothing); choosing `launch` seeds the dataset and rents the A100 (~USD 2). Secrets are read from GitHub and expanded into the launch mutation in memory (`RunPodAdapter._resolved_mutation`); the on-disk artefact keeps `${NAME}` placeholders.
 
-## After a run
+## After a run — measuring the adapter
 
-1. `protea evaluate run --provider protea --model <served adapter>` once the adapter is served (Phase 5).
-2. `protea evaluate compare candidate.json --base base.json --frontier frontier.json` for the release gate and kill criterion.
-3. `protea train register <run_dir> --version 0.1.0`, then `protea registry promote protea-agent-0.1.0 --to candidate` only with a passing report.
+The whole point of the run is to beat base Qwen on the benchmarks. Once the pod prints its final
+`adapter and checkpoints synced to <storage>` line and the adapter is in your bucket, evaluate it:
+
+0. **Fetch the adapter back** from storage (the pod's disk is gone): with the R2 env vars set,
+   `protea-storage pull s3://<bucket>/runs <local runs dir>`. `AWS_ENDPOINT_URL` selects R2; region is `auto`.
+1. **Serve it.** Stand up the adapter behind the vLLM facade (the `Dockerfile.infer` image, `--adapter <path>`).
+   **Execution boundary:** serving an 8B model needs a GPU, so this is a short rental with its own cost — quote it
+   and confirm before standing it up, exactly like the training run.
+2. **Score it.** `protea evaluate run --provider protea --model <served adapter>` for ZaraBench, and
+   `protea evaluate run --config configs/evaluation/citizen-0.1.yaml --provider protea --model <served adapter>`
+   for the government slice. Compare against the base-model and frontier reports already in `evaluation/reports/`.
+3. **Gate.** `protea evaluate compare candidate.json --base base.json --frontier frontier.json` applies the
+   release gate and kill criterion — the fine-tune has to clear the floor and close the gap to frontier.
+4. **Register & promote.** `protea train register <run_dir> --version 0.1.0`, then
+   `protea registry promote protea-agent-0.1.0 --to candidate` — only with a passing report.
+
+A **free first read** before paying to serve: point the eval at base Qwen on your own machine via Ollama
+(`--provider ollama --model qwen3:8b`) to capture the "before" number the fine-tune must beat. CitizenBench is
+deterministic (no judge), so that baseline costs nothing.
