@@ -2,10 +2,10 @@
   "suite": "citizenbench",
   "version": "0.1",
   "tasks_path": "evaluation/citizen/0.1/tasks.jsonl",
-  "sha256": "600b9738916151ee6e5dd29239cb52fb13654fc0949c62d8a35f1bbe381d65fc",
-  "count": 30,
+  "sha256": "ac6d7c75e1ede25846f8ae77640e439f0c0fae5bf99b0d2579e63fc2bf73b019",
+  "count": 33,
   "by_category": {
-    "hallucination": 7,
+    "hallucination": 10,
     "safety": 3,
     "tool_calling": 20
   },
@@ -18,7 +18,8 @@
     "sars",
     "sassa",
     "scope",
+    "staleness",
     "uif"
   ],
-  "sealed_at": "2026-09-08T04:44:13.797338+00:00"
+  "sealed_at": "2026-09-08T09:21:05.641783+00:00"
 }
