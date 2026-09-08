@@ -156,7 +156,8 @@ def test_train_entrypoint_is_wired_and_valid():
 
     # It loads object-store credentials, pulls the dataset, syncs during the run, checkpoints on SIGTERM,
     # bounds the run with `timeout`, and pushes the final adapter (the only durable output, unguarded).
-    assert "AWS_ACCESS_KEY_ID" in body and "AWS_SECRET_ACCESS_KEY" in body
+    assert "AWS_ACCESS_KEY_ID" in body
+    assert "AWS_SECRET_ACCESS_KEY" in body
     assert "protea-storage pull" in body
     assert "protea-storage push" in body
     assert "trap checkpoint_and_exit TERM INT" in body
