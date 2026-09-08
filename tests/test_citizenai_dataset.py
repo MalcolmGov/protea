@@ -18,7 +18,8 @@ def test_examples_are_valid_and_never_golden():
         assert e.messages[-1].role == "assistant"  # last turn is the training target
         assert e.metadata.split in (Split.TRAIN, Split.VALIDATION)  # never golden — golden is the eval hold-out
         assert e.metadata.task_type == TaskType.TOOL_CALLING
-        assert e.metadata.synthetic and e.metadata.generator_model  # provenance recorded
+        assert e.metadata.synthetic  # provenance recorded
+        assert e.metadata.generator_model
 
 
 def test_v0_is_en_za_only_verified_language():
