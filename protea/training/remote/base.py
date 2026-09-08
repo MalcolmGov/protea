@@ -217,7 +217,8 @@ class RemoteAdapter(ABC):
             estimate=req.estimate,
             max_runtime_minutes=max_minutes,
             idle_shutdown_minutes=idle,
-            storage=f"{self.remote.storage.kind}:{self.remote.storage.uri}",
+            storage=f"{self.remote.storage.kind}:{self.remote.storage.uri}"
+            + (f" @ {self.remote.storage.endpoint}" if self.remote.storage.endpoint else ""),
             command=training_command(req.cfg_path, req.run_id),
             env_names=["HF_TOKEN", "PROTEA_STORAGE_CREDENTIALS", *(env_names or [])],
             safeguards=common_safeguards(self.remote, max_minutes, idle) + (safeguards or []),

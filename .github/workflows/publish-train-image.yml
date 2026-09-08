@@ -1,0 +1,58 @@
+name: Publish training image
+
+# Builds deployment/protea/Dockerfile.train and pushes it to GHCR as ghcr.io/malcolmgov/protea-train.
+# The image bakes protea/ and configs/, so dispatch this manually right before a training campaign to ship
+# the current code; it also auto-publishes when the image's own build inputs change on main.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - deployment/protea/Dockerfile.train
+      - deployment/protea/entrypoint-train.sh
+      - requirements/train-gpu.txt
+      - .github/workflows/publish-train-image.yml
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The CUDA + PyTorch base image is large; reclaim runner disk before building.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/malcolmgov/protea-train
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=long
+
+      - name: Build and push
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: deployment/protea/Dockerfile.train
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
