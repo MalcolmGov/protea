@@ -207,6 +207,9 @@ class RunPodSection(BaseModel):
     volume_gb: int = 100
     container_disk_gb: int = 50
     template_id: str | None = None
+    # Must NOT overlap the image's code dir (/workspace/protea): a volume mounted there shadows the baked-in
+    # code. Durability comes from the R2 checkpoint sync, so this volume is just scratch on a neutral path.
+    volume_mount_path: str = "/runpod-volume"
 
 
 class AzureSection(BaseModel):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import httpx
@@ -22,7 +23,7 @@ DEPLOY_MUTATION = """mutation {{
   podFindAndDeployOnDemand(input: {{
     cloudType: {cloud_type}, gpuCount: {gpu_count}, volumeInGb: {volume_gb}, containerDiskInGb: {disk_gb},
     minVcpuCount: 8, minMemoryInGb: 32, gpuTypeId: "{gpu_type}", name: "{name}", imageName: "{image}",
-    dockerArgs: "{docker_args}", ports: "22/tcp", volumeMountPath: "/workspace",
+    dockerArgs: "{docker_args}", ports: "22/tcp", volumeMountPath: "{volume_mount_path}",
     env: [{env}]
   }}) {{ id imageName machineId }}
 }}"""
@@ -72,16 +73,23 @@ class RunPodAdapter(RemoteAdapter):
             # The image's entrypoint (bash -lc) runs this; the wrapper builds the trainer command from PROTEA_CONFIG
             # / PROTEA_RUN_ID and handles credentials, sync, the runtime limit and the final push.
             docker_args="entrypoint-train.sh",
+            volume_mount_path=rp.volume_mount_path,
             env=env,
         )
         plan.artifacts = {"runpod-deploy.graphql": mutation}
         return plan
 
+    def _resolved_mutation(self, artefact_dir: Path) -> str:
+        # The artefact stores secrets as ${NAME} placeholders and never their values (so it is safe to review and
+        # keep). Expand them from the environment in memory, only here at launch, so the real values reach RunPod
+        # without ever being written to disk. An unset placeholder is left intact so RunPod surfaces a clear error.
+        return os.path.expandvars((artefact_dir / "runpod-deploy.graphql").read_text(encoding="utf-8"))
+
     def launch(self, plan: JobPlan, artefact_dir: Path) -> str:
         api_key = getattr(self.settings, "runpod_api_key", None)
         if not api_key:
             raise RuntimeError("RUNPOD_API_KEY is not set")
-        mutation = (artefact_dir / "runpod-deploy.graphql").read_text(encoding="utf-8")
+        mutation = self._resolved_mutation(artefact_dir)
         resp = httpx.post(
             "https://api.runpod.io/graphql",
             params={"api_key": api_key},
