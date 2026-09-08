@@ -24,15 +24,15 @@ if [ -n "${AWS_ENDPOINT_URL:-}" ]; then export AWS_DEFAULT_REGION="${AWS_DEFAULT
 cd "$WORKDIR"
 
 # Dataset and any prior checkpoints live on storage that outlives the instance, not in the image.
-protea-storage pull "$PROTEA_STORAGE" "$WORKDIR/protea_data" "$WORKDIR/runs" || true
+protea-storage pull "$PROTEA_STORAGE" "$WORKDIR/protea_data" "$WORKDIR/checkpoints" || true
 
-sync_loop() { while sleep "$((SYNC_MINUTES * 60))"; do protea-storage push "$WORKDIR/runs" "$PROTEA_STORAGE" || true; done; }
+sync_loop() { while sleep "$((SYNC_MINUTES * 60))"; do protea-storage push "$WORKDIR/checkpoints" "$PROTEA_STORAGE" || true; done; }
 sync_loop & SYNC_PID=$!
 
 checkpoint_and_exit() {
   echo "protea-train: SIGTERM, syncing checkpoints before exit"
   kill "$SYNC_PID" 2>/dev/null || true
-  protea-storage push "$WORKDIR/runs" "$PROTEA_STORAGE" || true
+  protea-storage push "$WORKDIR/checkpoints" "$PROTEA_STORAGE" || true
   exit 143
 }
 trap checkpoint_and_exit TERM INT
@@ -45,7 +45,7 @@ set -e
 
 kill "$SYNC_PID" 2>/dev/null || true
 # The final push must succeed — this is the run's only durable output — so it is not guarded with `|| true`.
-protea-storage push "$WORKDIR/runs" "$PROTEA_STORAGE"
+protea-storage push "$WORKDIR/checkpoints" "$PROTEA_STORAGE"
 echo "protea-train: adapter and checkpoints synced to $PROTEA_STORAGE (exit $STATUS)"
 
 # Best-effort self-stop so a finished pod does not idle-bill. Only fires if the pod was given RUNPOD_API_KEY

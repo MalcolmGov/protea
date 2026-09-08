@@ -1,6 +1,6 @@
 """Run directory, immutable config snapshot and manifest (spec §16, §17, §78).
 
-runs/<experiment>/<run_id>/
+<output.dir>/<experiment>/<run_id>/    (output.dir defaults to "checkpoints"; the remote entrypoint syncs this tree)
   config.yaml      the exact config that produced this run (frozen; resuming with a different hash is refused)
   manifest.json    provenance: dataset hashes, base model, git commit, environment, status, final metrics
   metrics.jsonl    one line per logging step
