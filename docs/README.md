@@ -22,3 +22,4 @@ Protea is Moove Digital's proprietary model platform. It began as "ZaraLM" in th
 | `adr/` | Architecture decision records (001 repository split, 002 provider abstraction, 003 dataset format, 004 registries, 005 configuration, 006 data pipeline, 007 evaluation framework, 008 training, 009 inference, 010 router, 011 production hardening, 012 CitizenAI government domain) |
 
 See also `docs/citizenbench.md` — the CitizenAI government-services evaluation slice (ADR-012).
+See also `docs/citizenai/build-spec.md` — the SA CitizenAI v0 build specification (Pillar 11, ADR-012).
