@@ -1,14 +1,15 @@
 name: Run training (RunPod)
 
-# One-click remote training. Set these repository secrets first
+# One-click remote training. Set these repository secrets once
 # (Settings → Secrets and variables → Actions → New repository secret):
 #   RUNPOD_API_KEY        - your RunPod API key
 #   HF_TOKEN              - your Hugging Face read token
 #   R2_ACCESS_KEY_ID      - Cloudflare R2 access key id
 #   R2_SECRET_ACCESS_KEY  - Cloudflare R2 secret access key
-# And upload the two dataset files (train.jsonl, validation.jsonl) to the ROOT of your R2 bucket once.
-# Then run this workflow (Actions → Run training (RunPod) → Run workflow) with your bucket + endpoint.
-# It defaults to a dry-run that rents nothing; choose "launch" to actually rent the GPU (~USD 2).
+# Upload the training config's dataset files to R2 first (train_key / val_key below), then run this workflow
+# (Actions → Run training (RunPod) → Run workflow). It defaults to a dry-run that rents nothing; choose
+# "launch" to actually rent the GPU. The local dataset paths are read from the training config, so the same
+# workflow launches 0.1, 0.2 (blended), or any future version — just point config/train_key/val_key at them.
 on:
   workflow_dispatch:
     inputs:
@@ -18,8 +19,20 @@ on:
       endpoint:
         description: R2 S3 endpoint, e.g. https://<account-id>.r2.cloudflarestorage.com
         required: true
+      config:
+        description: Training config to run
+        required: true
+        default: configs/training/protea-agent-8b-qlora.yaml
+      train_key:
+        description: R2 key of the train split (matches the config's dataset.train)
+        required: true
+        default: train.jsonl
+      val_key:
+        description: R2 key of the validation split (matches the config's dataset.validation)
+        required: true
+        default: validation.jsonl
       confirm:
-        description: dry-run prints the plan and cost only; launch rents an A100 (~USD 2)
+        description: dry-run prints the plan and cost only; launch rents an A100 (~USD 2-4)
         required: true
         default: dry-run
         type: choice
@@ -65,17 +78,26 @@ jobs:
           print(p.read_text())
           PY
 
-      # The dataset is gitignored (proprietary; kept out of the public repo). You upload the two files to the
-      # bucket root; this places them at the paths the trainer and the registry pin expect.
-      - name: Fetch the dataset from R2
+      # The dataset is gitignored (proprietary; kept out of the public repo). We read the local paths the chosen
+      # training config expects, then copy the R2 objects into exactly those paths — so train/validation land
+      # where both `train remote` (for hashing) and the pod's entrypoint (after pull) look for them.
+      - name: Fetch the dataset from R2 into the config's paths
         env:
           BUCKET: ${{ inputs.bucket }}
+          CONFIG: ${{ inputs.config }}
+          TRAIN_KEY: ${{ inputs.train_key }}
+          VAL_KEY: ${{ inputs.val_key }}
         run: |
-          mkdir -p protea_data/agent-training/0.1.0
-          aws s3 cp "s3://${BUCKET}/train.jsonl"      protea_data/agent-training/0.1.0/train.jsonl
-          aws s3 cp "s3://${BUCKET}/validation.jsonl" protea_data/agent-training/0.1.0/validation.jsonl
+          TRAIN_DST=$(python -c "import yaml,sys; print(yaml.safe_load(open('$CONFIG'))['dataset']['train'])")
+          VAL_DST=$(python -c "import yaml,sys; print(yaml.safe_load(open('$CONFIG'))['dataset']['validation'])")
+          mkdir -p "$(dirname "$TRAIN_DST")" "$(dirname "$VAL_DST")"
+          aws s3 cp "s3://${BUCKET}/${TRAIN_KEY}" "$TRAIN_DST"
+          aws s3 cp "s3://${BUCKET}/${VAL_KEY}"   "$VAL_DST"
+          echo "TRAIN_DST=$TRAIN_DST" >> "$GITHUB_ENV"
+          echo "VAL_DST=$VAL_DST" >> "$GITHUB_ENV"
 
-      # Put the dataset where the pod's entrypoint pulls it from (PROTEA_STORAGE/protea_data).
+      # Put the dataset where the pod's entrypoint pulls it from (PROTEA_STORAGE/protea_data). Idempotent: if you
+      # already uploaded the files under protea_data/… this just re-affirms them.
       - name: Seed the dataset for the pod
         if: ${{ inputs.confirm == 'launch' }}
         env:
@@ -84,18 +106,21 @@ jobs:
 
       - name: Plan (dry-run — rents nothing)
         if: ${{ inputs.confirm != 'launch' }}
+        env:
+          CONFIG: ${{ inputs.config }}
         run: |
           PYTHONPATH=. python -m protea.cli train remote \
-            --config configs/training/protea-agent-8b-qlora.yaml \
-            --remote configs/remote/runpod-a100.yaml
+            --config "$CONFIG" \
+            --remote configs/remote/runpod-a100.yaml --allow-unregistered
 
-      - name: Launch (rents an A100, ~USD 2)
+      - name: Launch (rents an A100)
         if: ${{ inputs.confirm == 'launch' }}
         env:
+          CONFIG: ${{ inputs.config }}
           RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           PROTEA_STORAGE_CREDENTIALS: ${{ secrets.R2_ACCESS_KEY_ID }}:${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
           PYTHONPATH=. python -m protea.cli train remote \
-            --config configs/training/protea-agent-8b-qlora.yaml \
-            --remote configs/remote/runpod-a100.yaml --confirm
+            --config "$CONFIG" \
+            --remote configs/remote/runpod-a100.yaml --allow-unregistered --confirm
