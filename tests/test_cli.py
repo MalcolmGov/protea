@@ -24,3 +24,10 @@ def test_doctor_json_output_is_valid():
     result = runner.invoke(app, ["doctor", "--json"])
     assert result.exit_code == 0
     assert "checks" in json.loads(result.output)
+
+
+def test_train_local_exposes_eval_flag():
+    # `train local --eval` is what the remote entrypoint uses to self-score the adapter after training.
+    result = runner.invoke(app, ["train", "local", "--help"])
+    assert result.exit_code == 0
+    assert "--eval" in result.output

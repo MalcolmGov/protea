@@ -208,6 +208,7 @@ def test_train_entrypoint_is_wired_and_valid():
     assert "trap checkpoint_and_exit TERM INT" in body
     assert "timeout --signal=TERM" in body
     assert "protea train local --config" in body
+    assert "--eval" in body  # the run self-evaluates the adapter before the final push
 
     if shutil.which("bash"):
         subprocess.run(["bash", "-n", str(script)], check=True)

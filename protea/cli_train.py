@@ -66,6 +66,62 @@ def _echo_stats(label: str, st) -> None:
     )
 
 
+def _post_train_eval(cfg, run, manifest, eval_config: Path, root: Path) -> None:
+    """Score the freshly-trained adapter against a judge-free suite and write the report into the run
+    directory, so it syncs to storage alongside the checkpoints. Best-effort: a failure here is logged
+    and never fails the training run — the adapter is already saved by the time we get here."""
+    if not eval_config.exists():
+        typer.secho(f"eval skipped: suite config not found at {eval_config}", err=True, fg=typer.colors.YELLOW)
+        return
+    try:
+        import asyncio
+
+        from protea.config import config_hash, load_config
+        from protea.evaluation.report import write_report
+        from protea.evaluation.runner import run_benchmark
+        from protea.evaluation.tasks import load_tasks, task_set_hash
+        from protea.providers import build_provider
+
+        ecfg = load_config(eval_config, "evaluation")
+        tasks_path = root / ecfg.tasks_path
+        if not tasks_path.exists():
+            typer.secho(f"eval skipped: task set not found at {tasks_path}", err=True, fg=typer.colors.YELLOW)
+            return
+        tasks = load_tasks(tasks_path)
+        # Release the GPU memory the trainer held before loading the model for inference.
+        try:
+            import gc
+
+            import torch
+
+            gc.collect()
+            torch.cuda.empty_cache()
+        except Exception:
+            pass
+        # No judge: judge-scored tasks are skipped (report marked partial); everything deterministic still scores,
+        # so the run needs no inference-provider API key on the training host.
+        provider = build_provider("local", model=cfg.model.base_model, adapter=str(run.adapter))
+        report = asyncio.run(
+            run_benchmark(
+                ecfg,
+                tasks,
+                provider,
+                judge=None,
+                run_id=manifest.run_id,
+                config_hash=config_hash(ecfg),
+                task_set_hash=task_set_hash(tasks_path),
+            )
+        )
+        json_path, _ = write_report(report, run.path / "eval", ecfg)
+        manifest.final_metrics["zarascore"] = report.zarascore
+        manifest.artifacts["eval_report"] = str(json_path)
+        run.save(manifest)
+        note = " (partial — judge-scored tasks skipped)" if report.partial else ""
+        typer.echo(f"eval         ZaraScore {report.zarascore:.4f}{note}; report {json_path}")
+    except Exception as exc:  # never let evaluation sink a completed training run
+        typer.secho(f"eval skipped after error: {exc}", err=True, fg=typer.colors.YELLOW)
+
+
 @train_app.command("local")
 def train_local(
     config: Path = typer.Option(..., exists=True, help="Training config YAML."),
@@ -77,6 +133,14 @@ def train_local(
     max_steps: int | None = typer.Option(None, help="Override training.max_steps (smoke runs)."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Load and check the dataset, create nothing, train nothing."),
     allow_unregistered: bool = typer.Option(False, help="Proceed when the dataset key is not in the registry."),
+    run_eval: bool = typer.Option(
+        False,
+        "--eval",
+        help="After a successful run, score the adapter against a judge-free suite and write the report into the run dir.",
+    ),
+    eval_config: Path = typer.Option(
+        Path("configs/evaluation/zarabench-0.1.yaml"), help="Evaluation suite used by --eval."
+    ),
 ) -> None:
     """Fine-tune on this machine. The config is frozen into the run directory; resuming with a changed config is refused."""
     from protea.config import get_settings
@@ -126,6 +190,8 @@ def train_local(
         + ", ".join(f"{k}={v:.4f}" for k, v in sorted(manifest.final_metrics.items()) if k.endswith("loss"))
     )
     typer.echo(f"adapter      {run.adapter} ({(sha or 'no weights file')[:12]})\ncard         {run.card_path}")
+    if run_eval and manifest.status == "completed":
+        _post_train_eval(cfg, run, manifest, eval_config, root)
 
 
 @train_app.command("remote")
