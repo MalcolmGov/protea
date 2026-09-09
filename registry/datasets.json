@@ -33,5 +33,40 @@
       "structured_output"
     ],
     "version": "0.1.0"
+  },
+  {
+    "card_path": "docs/datasets/agent-training-0.2.0.md",
+    "created_at": "2026-09-09T13:07:45.823350Z",
+    "generator_models": [],
+    "golden": false,
+    "name": "agent-training",
+    "path": "protea_data/agent-training/0.2.0/train.jsonl",
+    "sha256": "b13d803029ee4d1cac9dbaf71da44a33649d58a15bb6b6bc554c93bdd496299c",
+    "sources": [
+      {
+        "commit": "aff2366d8b7d52a34dbbd3a026be1c260387a4cb",
+        "paths": [],
+        "repo": "MalcolmGov/aria"
+      },
+      {
+        "commit": "9f29405dfd2717c9477e078a389f45eaa297e56b",
+        "paths": [],
+        "repo": "MalcolmGov/miai-agents"
+      }
+    ],
+    "splits": {
+      "golden": 52,
+      "test": 283,
+      "train": 1019,
+      "validation": 87
+    },
+    "status": "draft",
+    "task_types": [
+      "agent_generation",
+      "connector_selection",
+      "routing",
+      "structured_output"
+    ],
+    "version": "0.2.0"
   }
 ]

@@ -436,6 +436,46 @@ def _print_review(report) -> None:
         typer.secho(f"  [{r.lane}] {r.family or '?'} {r.id[:8]}: {'; '.join(r.reasons)}", fg=color)
 
 
+@dataset_app.command("blend")
+def dataset_blend(
+    mined: Path = typer.Argument(..., exists=True, help="A mined build's train split (train.jsonl)."),
+    synthetic: list[Path] = typer.Argument(..., exists=True, help="Reviewed synthetic JSONL file(s) to blend in."),
+    out: Path = typer.Option(..., help="Where to write the merged train split."),
+    approved_only: bool = typer.Option(
+        False, help="Take only rows already stamped review_status=approved; default keeps non-rejected rows."
+    ),
+    pii_mode: str = typer.Option("synthetic", help="PII scrub mode for synthetic rows: synthetic | placeholder."),
+) -> None:
+    """Merge reviewed synthetic rows into a mined train split: drop rejected, scrub PII, dedup, mark approved.
+
+    Only the train split is touched — validation/test/golden stay the mined build's, so the eval hold-out is
+    never diluted with synthetic data. Never trains; just assembles the file the training run points at.
+    """
+    from protea.data_pipeline.blend import blend
+    from protea.schemas.examples import TrainingExample, iter_examples
+
+    mined_rows = [TrainingExample.model_validate_json(line) for _, line in iter_examples(mined)]
+    synth_rows: list[TrainingExample] = []
+    for path in synthetic:
+        synth_rows.extend(TrainingExample.model_validate_json(line) for _, line in iter_examples(path))
+
+    merged, report = blend(mined_rows, synth_rows, keep_flagged=not approved_only, pii_mode=pii_mode)
+
+    with out.open("w", encoding="utf-8") as fh:
+        for ex in merged:
+            fh.write(ex.model_dump_json() + "\n")
+
+    typer.echo(f"mined {report.mined_rows} + synthetic {report.synthetic_in} "
+               f"(dropped: rejected {report.dropped_rejected}, unapproved {report.dropped_unapproved}, "
+               f"duplicate {report.dropped_duplicate})")
+    if report.pii_redactions:
+        typer.echo(f"pii scrubbed on {report.pii_scrubbed_rows} row(s): {report.pii_redactions}")
+    typer.secho(f"merged {report.merged_total} rows ({report.synthetic_kept} synthetic) -> {out}",
+                fg=typer.colors.GREEN)
+    if not report.ok:
+        _fail("blend accounting mismatch")
+
+
 # ---- registry -----------------------------------------------------------------------------------
 def _registries():
     from protea.config import get_settings
