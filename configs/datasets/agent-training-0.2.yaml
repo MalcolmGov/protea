@@ -1,0 +1,48 @@
+# Dataset build config for agent-training 0.2.0.
+#
+# Same sources and recipes as 0.1.0, with the one change 0.1.0's header flagged for 0.2: `holdout_lock` is
+# enabled, so any example whose family is sealed in the ZaraBench golden.lock is kept OUT of train/validation.
+# That closes the eval-leakage door — the benchmark stays a true hold-out even as the training set grows (via
+# more source packages or eval-checked synthesis; see docs/data-growth.md).
+#
+# Source roots are local clones at pinned commits; override with PROTEA_SOURCE_ARIA / PROTEA_SOURCE_MIAI_AGENTS.
+name: agent-training
+version: 0.2.0
+output_dir: protea_data/agent-training/0.2.0
+holdout_lock: evaluation/zarabench/0.1/golden.lock   # sealed families never enter train/validation
+split_seed: 42
+dedup_threshold: 0.92
+contamination_threshold: 0.5
+sources:
+  - name: aria
+    repo: MalcolmGov/aria
+    root: ../aria
+    license_status: approved      # Moove Digital-authored catalogue and registries
+    authored: false               # catalogue evals go through the review lane
+    extractors:
+      - {kind: agent_package_json, glob: "data/agents/*.agent.json"}
+      - {kind: presets_ts, path: agent_runtime/packages/presets/src/generated-presets.ts}
+      - {kind: python_registry, path: embed/connectors_v2.py, variable: CONNECTORS_CATALOG, entity: connector}
+      - {kind: python_registry, path: embed/tool_registry.py, variable: TOOLS_REGISTRY, entity: tool}
+      - {kind: python_registry, path: embed/skills_registry.py, variable: SKILLS_CATALOG, entity: skill}
+      - {kind: routing_corpus, path: tests/routing/corpus.py, variable: CORPUS}
+      - {kind: flagship_specs, path: embed/flagship_agents.py, variable: FLAGSHIP_AGENTS}
+  - name: miai-agents
+    repo: MalcolmGov/miai-agents
+    root: ../miai-agents
+    license_status: approved
+    authored: true                # hand-authored evals are trusted
+    extractors:
+      - {kind: agent_package_dir, glob: "agents/*/manifest.json"}
+recipes:
+  agent_generation: {enabled: true}
+  structured_output: {enabled: true}
+  connector_selection: {enabled: true}
+  routing: {enabled: true}
+  tool_calling: {enabled: true, max_per_source_item: 40}
+splits: {train: 0.8, validation: 0.1, test: 0.1}
+golden: {per_task_type: 15, seed: 42}
+scrub:
+  brand_rules_path: "aria:scripts/marketplace/brand_scrub.json"
+  pii_mode: synthetic
+  infra_patterns: {}
