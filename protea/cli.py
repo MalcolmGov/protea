@@ -361,7 +361,14 @@ def dataset_review(
     would apply — it never trains or approves on its own; it sorts rows into blocked / flagged / clean so the
     human review lane knows where to look.
     """
-    from protea.data_pipeline.review import RowReview, reference_shingles, review_examples
+    from protea.data_pipeline.review import (
+        LANE_BLOCKED,
+        LANE_CLEAN,
+        LANE_FLAGGED,
+        RowReview,
+        reference_shingles,
+        review_examples,
+    )
     from protea.schemas.examples import ReviewStatus, TrainingExample, iter_examples
 
     examples: list[TrainingExample] = []
@@ -387,8 +394,8 @@ def dataset_review(
     report.errors = parse_errors[:50]
 
     if out is not None:
-        lane_status = {"clean": ReviewStatus.APPROVED if approve_clean else ReviewStatus.PENDING,
-                       "flagged": ReviewStatus.PENDING, "blocked": ReviewStatus.REJECTED}
+        lane_status = {LANE_CLEAN: ReviewStatus.APPROVED if approve_clean else ReviewStatus.PENDING,
+                       LANE_FLAGGED: ReviewStatus.PENDING, LANE_BLOCKED: ReviewStatus.REJECTED}
         by_id: dict[str, RowReview] = {r.id: r for r in report.rows}
         with out.open("w", encoding="utf-8") as fh:
             for ex in examples:
@@ -422,8 +429,10 @@ def _print_review(report) -> None:
     if top:
         typer.echo("top families: " + ", ".join(f"{f}×{n}" for f, n in top))
     typer.echo(f"languages: {report.by_language}")
-    for r in [r for r in report.rows if r.lane != "clean"][:15]:
-        color = typer.colors.RED if r.lane == "blocked" else typer.colors.YELLOW
+    from protea.data_pipeline.review import LANE_BLOCKED, LANE_CLEAN
+
+    for r in [r for r in report.rows if r.lane != LANE_CLEAN][:15]:
+        color = typer.colors.RED if r.lane == LANE_BLOCKED else typer.colors.YELLOW
         typer.secho(f"  [{r.lane}] {r.family or '?'} {r.id[:8]}: {'; '.join(r.reasons)}", fg=color)
 
 

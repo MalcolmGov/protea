@@ -46,13 +46,28 @@ _REFUSAL_MARKERS = (
 )
 
 
+# The three review lanes, ordered by severity so a later check only ever escalates (never downgrades) a row.
+LANE_CLEAN = "clean"
+LANE_FLAGGED = "flagged"
+LANE_BLOCKED = "blocked"
+
+
 class RowReview(BaseModel):
     """Per-row verdict. ``lane`` is the worst category any check assigned; ``reasons`` lists every finding."""
 
     id: str
     family: str | None = None
-    lane: str = "clean"  # clean | flagged | blocked
+    lane: str = LANE_CLEAN
     reasons: list[str] = Field(default_factory=list)
+
+    def block(self, reason: str) -> None:
+        self.lane = LANE_BLOCKED
+        self.reasons.append(reason)
+
+    def flag(self, reason: str) -> None:
+        if self.lane != LANE_BLOCKED:  # a block already found is the worse lane; never downgrade it
+            self.lane = LANE_FLAGGED
+        self.reasons.append(reason)
 
 
 class ReviewReport(BaseModel):
@@ -139,8 +154,7 @@ def review_examples(
 
         # Synthetic-provenance invariants — these rows must declare what made them.
         if not meta.synthetic or not meta.generator_model:
-            rv.lane = "blocked"
-            rv.reasons.append("missing synthetic/generator_model provenance")
+            rv.block("missing synthetic/generator_model provenance")
             report.invariant_violations += 1
             report.non_synthetic += int(not meta.synthetic)
         if meta.task_type != TaskType.TOOL_CALLING:
@@ -148,39 +162,30 @@ def review_examples(
 
         # Golden-lock: a sealed family in the training lane is eval leakage — a hard block.
         if meta.family in held_out_families:
-            rv.lane = "blocked"
-            rv.reasons.append(f"family {meta.family!r} is sealed in the golden lock")
+            rv.block(f"family {meta.family!r} is sealed in the golden lock")
             report.golden_lock_violations += 1
 
         text = _row_text(ex)
 
         secrets = scan_secrets(text)
         if secrets:
-            rv.lane = "blocked"
-            rv.reasons.append("secret: " + ", ".join(sorted({h.rule for h in secrets})))
+            rv.block("secret: " + ", ".join(sorted({h.rule for h in secrets})))
             report.secret_rows += 1
 
         pii = scan_pii(text)
         if pii:
-            if rv.lane != "blocked":
-                rv.lane = "flagged"
             kinds = sorted({h.kind for h in pii})
-            rv.reasons.append("pii: " + ", ".join(kinds))
+            rv.flag("pii: " + ", ".join(kinds))
             report.pii_rows += 1
             for k in kinds:
                 report.pii_by_kind[k] = report.pii_by_kind.get(k, 0) + 1
 
         reply = _final_reply(ex)
         if len(reply.strip()) < _MIN_REPLY_CHARS and not ex.messages[-1].tool_calls:
-            if rv.lane != "blocked":
-                rv.lane = "flagged"
-            rv.reasons.append("degenerate: empty/near-empty final reply")
+            rv.flag("degenerate: empty/near-empty final reply")
             report.degenerate += 1
-        low = reply.lower()
-        if any(marker in low for marker in _REFUSAL_MARKERS):
-            if rv.lane != "blocked":
-                rv.lane = "flagged"
-            rv.reasons.append("refusal-shaped final reply")
+        if any(marker in reply.lower() for marker in _REFUSAL_MARKERS):
+            rv.flag("refusal-shaped final reply")
             report.refusal_shaped += 1
 
     # Second pass: near-duplicate detection needs the whole batch (and the reference set).
@@ -197,24 +202,20 @@ def review_examples(
         # vs already-kept rows earlier in this batch
         dup_within = any(jaccard(sh, osh) >= dup_threshold for _, osh in by_task.get(tt, []))
         if dup_within:
-            if rv.lane != "blocked":
-                rv.lane = "flagged"
-            rv.reasons.append("near-duplicate of another kept row")
+            rv.flag("near-duplicate of another kept row")
             report.duplicates_within += 1
         else:
             by_task.setdefault(tt, []).append((ex.metadata.id, sh))
 
         # vs the existing training set
         if any(jaccard(sh, rsh) >= dup_threshold for rsh in ref_by_task.get(tt, [])):
-            if rv.lane != "blocked":
-                rv.lane = "flagged"
-            rv.reasons.append("near-duplicate of an existing training row")
+            rv.flag("near-duplicate of an existing training row")
             report.duplicates_vs_reference += 1
 
     report.rows = list(reviews.values())
-    report.blocked = sum(1 for r in report.rows if r.lane == "blocked")
-    report.flagged = sum(1 for r in report.rows if r.lane == "flagged")
-    report.clean = sum(1 for r in report.rows if r.lane == "clean")
+    report.blocked = sum(1 for r in report.rows if r.lane == LANE_BLOCKED)
+    report.flagged = sum(1 for r in report.rows if r.lane == LANE_FLAGGED)
+    report.clean = sum(1 for r in report.rows if r.lane == LANE_CLEAN)
     return report
 
 
