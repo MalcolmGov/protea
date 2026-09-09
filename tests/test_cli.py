@@ -28,6 +28,10 @@ def test_doctor_json_output_is_valid():
 
 def test_train_local_exposes_eval_flag():
     # `train local --eval` is what the remote entrypoint uses to self-score the adapter after training.
-    result = runner.invoke(app, ["train", "local", "--help"])
-    assert result.exit_code == 0
-    assert "--eval" in result.output
+    # Introspect the registered command's options rather than parsing rendered --help (which rich wraps
+    # and ellipsises at narrow terminal widths, differing between local and CI).
+    from typer.main import get_command
+
+    local_cmd = get_command(app).commands["train"].commands["local"]
+    opts = {opt for param in local_cmd.params for opt in getattr(param, "opts", [])}
+    assert "--eval" in opts
