@@ -1,0 +1,112 @@
+name: Review synthetic data (lane gate)
+
+# Reviews kept synthetic rows BEFORE they train. Synthesis already gated correctness (each seed's `expect`);
+# this applies the softer checks `dataset build` would — provenance, secret scan, PII scan, golden-lock
+# leakage, dedup (within the batch and against an existing train split), and degenerate/refusal targets —
+# and sorts every row into blocked / flagged / clean.
+#
+# Spends NOTHING: it fetches from R2 and computes locally, no teacher, no GPU. A run goes RED when any row is
+# blocked (a secret, eval leakage, or broken provenance) — that is the signal to look, not a failure to fix.
+#
+# Needs the same R2 secrets as synthesize.yml (R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY). The annotated copy
+# (review_status stamped per row) is written back to R2 under reviewed/; only a metadata report (counts,
+# families, reasons — never row content or PII values) is uploaded as a workflow artifact.
+on:
+  workflow_dispatch:
+    inputs:
+      bucket:
+        description: R2 bucket name (e.g. protea-runs)
+        required: true
+      endpoint:
+        description: R2 S3 endpoint, e.g. https://<account-id>.r2.cloudflarestorage.com
+        required: true
+      synthetic_keys:
+        description: R2 key(s) of the synthetic JSONL to review — space-separated for several
+        required: true
+        default: synthetic/tool_calling.jsonl
+      reference_key:
+        description: Optional R2 key of an existing train split (e.g. train.jsonl) to cross-dedup against
+        required: false
+        default: ""
+      approve_clean:
+        description: Stamp clean rows 'approved' in the annotated copy (a human still signs the lane off)
+        required: true
+        default: "no"
+        type: choice
+        options: [ "no", "yes" ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: review
+  cancel-in-progress: false
+
+env:
+  AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+  AWS_ENDPOINT_URL: ${{ inputs.endpoint }}
+  AWS_DEFAULT_REGION: auto
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: "pip install --only-binary :all: --require-hashes -r requirements/base.txt"
+
+      # Proprietary rows live in R2, never in the repo. Fetch each named key into review_in/.
+      - name: Fetch synthetic rows from R2
+        env:
+          BUCKET: ${{ inputs.bucket }}
+          SYNTHETIC_KEYS: ${{ inputs.synthetic_keys }}
+          REFERENCE_KEY: ${{ inputs.reference_key }}
+        run: |
+          mkdir -p review_in
+          for key in $SYNTHETIC_KEYS; do
+            aws s3 cp "s3://${BUCKET}/${key}" "review_in/$(basename "$key")"
+          done
+          if [ -n "$REFERENCE_KEY" ]; then
+            aws s3 cp "s3://${BUCKET}/${REFERENCE_KEY}" reference.jsonl
+            echo "REF_ARG=--reference reference.jsonl" >> "$GITHUB_ENV"
+          fi
+
+      - name: Review (no spend — local checks only)
+        env:
+          APPROVE: ${{ inputs.approve_clean }}
+        run: |
+          [ "$APPROVE" = "yes" ] && APPROVE_ARG="--approve-clean" || APPROVE_ARG=""
+          # Human-readable summary to the log, plus an annotated copy and a metadata-only JSON report.
+          PYTHONPATH=. python -m protea.cli dataset review review_in/*.jsonl \
+            $REF_ARG --out reviewed.jsonl $APPROVE_ARG | tee review_summary.txt
+          RC=${PIPESTATUS[0]}
+          PYTHONPATH=. python -m protea.cli dataset review review_in/*.jsonl \
+            $REF_ARG --json > review_report.json || true
+          exit "$RC"
+
+      - name: Push annotated copy back to R2
+        if: always()
+        env:
+          BUCKET: ${{ inputs.bucket }}
+        run: |
+          if [ -f reviewed.jsonl ]; then
+            TS=$(date -u +%Y%m%dT%H%M%SZ)
+            DEST="s3://${BUCKET}/reviewed/tool_calling-reviewed-${TS}.jsonl"
+            aws s3 cp reviewed.jsonl "$DEST"
+            echo "annotated -> $DEST"
+          fi
+
+      # Report carries only counts, family names and reason labels (e.g. "pii: phone") — never row content or
+      # the PII/secret values themselves — so it is safe to keep as a workflow artifact.
+      - name: Upload review report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-report
+          path: |
+            review_report.json
+            review_summary.txt
+          if-no-files-found: warn

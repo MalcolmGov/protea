@@ -26,6 +26,36 @@ def test_doctor_json_output_is_valid():
     assert "checks" in json.loads(result.output)
 
 
+def test_dataset_review_sorts_rows_and_annotates(tmp_path):
+    # Two rows: one clean, one carrying a secret. The command must exit non-zero (a blocked row) and the
+    # annotated copy must stamp review_status accordingly.
+    import json
+
+    clean = {
+        "metadata": {"dataset_version": "0.2.0-synthetic", "source_type": "synthetic", "family": "acme",
+                     "task_type": "tool_calling", "synthetic": True, "generator_model": "anthropic:claude-sonnet-5"},
+        "messages": [{"role": "user", "content": "status?"},
+                     {"role": "assistant", "content": "Shipping tomorrow.",
+                      "tool_calls": [{"id": "c1", "name": "get_order_status", "arguments": {}}]}],
+        "tools": [],
+    }
+    leaky = json.loads(json.dumps(clean))
+    leaky["messages"][1]["content"] = "token sk-ant-api03-ABCDEFGHIJKLMNOPQRSTUV"
+
+    src = tmp_path / "synthetic.jsonl"
+    src.write_text(json.dumps(clean) + "\n" + json.dumps(leaky) + "\n", encoding="utf-8")
+    out = tmp_path / "reviewed.jsonl"
+
+    result = runner.invoke(app, ["dataset", "review", str(src), "--out", str(out)])
+    assert result.exit_code != 0  # a blocked (secret) row fails the gate
+    assert "blocked 1" in result.output
+
+    lines = [json.loads(x) for x in out.read_text().splitlines()]
+    statuses = {ln["messages"][1]["content"][:5]: ln["metadata"]["review_status"] for ln in lines}
+    assert statuses["Shipp"] == "pending"   # clean, but not auto-approved without --approve-clean
+    assert statuses["token"] == "rejected"  # the secret row
+
+
 def test_train_local_exposes_eval_flag():
     # `train local --eval` is what the remote entrypoint uses to self-score the adapter after training.
     # Introspect the registered command's options rather than parsing rendered --help (which rich wraps
