@@ -15,6 +15,7 @@ RUNPOD_GPU_IDS = {
     "l4": "NVIDIA L4",
     "a10g": "NVIDIA A10G",
     "l40s": "NVIDIA L40S",
+    "a6000": "NVIDIA RTX A6000",
     "a100-80gb": "NVIDIA A100 80GB PCIe",
     "h100-80gb": "NVIDIA H100 80GB HBM3",
 }

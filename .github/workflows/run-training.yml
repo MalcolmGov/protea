@@ -23,6 +23,15 @@ on:
         description: Training config to run
         required: true
         default: configs/training/protea-agent-8b-qlora.yaml
+      remote:
+        description: Remote/GPU target (A100 is fastest but often supply-constrained; A6000/L40S are 48GB and easier to get)
+        required: true
+        default: configs/remote/runpod-a100.yaml
+        type: choice
+        options:
+          - configs/remote/runpod-a100.yaml
+          - configs/remote/runpod-a6000.yaml
+          - configs/remote/runpod-l40s.yaml
       train_key:
         description: R2 key of the train split (matches the config's dataset.train)
         required: true
@@ -67,10 +76,11 @@ jobs:
         env:
           BUCKET: ${{ inputs.bucket }}
           ENDPOINT: ${{ inputs.endpoint }}
+          REMOTE: ${{ inputs.remote }}
         run: |
           python - <<'PY'
           import os, pathlib, yaml
-          p = pathlib.Path("configs/remote/runpod-a100.yaml")
+          p = pathlib.Path(os.environ["REMOTE"])
           cfg = yaml.safe_load(p.read_text())
           cfg["storage"]["uri"] = f"s3://{os.environ['BUCKET']}"
           cfg["storage"]["endpoint"] = os.environ["ENDPOINT"]
@@ -108,19 +118,21 @@ jobs:
         if: ${{ inputs.confirm != 'launch' }}
         env:
           CONFIG: ${{ inputs.config }}
+          REMOTE: ${{ inputs.remote }}
         run: |
           PYTHONPATH=. python -m protea.cli train remote \
             --config "$CONFIG" \
-            --remote configs/remote/runpod-a100.yaml --allow-unregistered
+            --remote "$REMOTE" --allow-unregistered
 
-      - name: Launch (rents an A100)
+      - name: Launch (rents the GPU)
         if: ${{ inputs.confirm == 'launch' }}
         env:
           CONFIG: ${{ inputs.config }}
+          REMOTE: ${{ inputs.remote }}
           RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           PROTEA_STORAGE_CREDENTIALS: ${{ secrets.R2_ACCESS_KEY_ID }}:${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
           PYTHONPATH=. python -m protea.cli train remote \
             --config "$CONFIG" \
-            --remote configs/remote/runpod-a100.yaml --allow-unregistered --confirm
+            --remote "$REMOTE" --allow-unregistered --confirm

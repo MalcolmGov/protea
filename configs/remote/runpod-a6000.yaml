@@ -1,0 +1,16 @@
+# 48GB alternative to the A100 target: one RTX A6000 on RunPod secure cloud. Same QLoRA-8B job fits in 48GB,
+# and A6000 capacity is usually easier to get than A100-80GB (which is frequently supply-constrained). Cheaper
+# per hour, a little slower — see configs/pricing/gpu.yaml. Everything else matches runpod-a100.yaml.
+provider: runpod
+gpu: a6000
+gpu_count: 1
+image: ghcr.io/malcolmgov/protea-train:latest
+spot: false
+# Checkpoints and the trained adapter sync to Cloudflare R2 (S3-compatible), so they outlive the disposable pod.
+# The launcher fills in your bucket/endpoint; the R2 access key/secret go in PROTEA_STORAGE_CREDENTIALS at launch.
+storage:
+  kind: s3
+  uri: s3://YOUR_R2_BUCKET/agent-training
+  endpoint: https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
+checkpoint_sync_minutes: 10
+runpod: {cloud_type: SECURE, volume_gb: 100, container_disk_gb: 50}
