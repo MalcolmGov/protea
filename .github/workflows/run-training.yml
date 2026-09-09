@@ -32,6 +32,8 @@ on:
           - configs/remote/runpod-a100.yaml
           - configs/remote/runpod-a6000.yaml
           - configs/remote/runpod-l40s.yaml
+          - configs/remote/runpod-l40s-community.yaml
+          - configs/remote/runpod-a6000-community.yaml
       train_key:
         description: R2 key of the train split (matches the config's dataset.train)
         required: true
