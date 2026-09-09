@@ -37,9 +37,13 @@ checkpoint_and_exit() {
 }
 trap checkpoint_and_exit TERM INT
 
+# `--eval` scores the adapter against a judge-free suite right after training and writes the report into the run
+# dir (so the push below carries it). Override the suite with PROTEA_EVAL_CONFIG; the eval never fails the run.
+EVAL_ARGS=(--eval)
+[ -n "${PROTEA_EVAL_CONFIG:-}" ] && EVAL_ARGS+=(--eval-config "$PROTEA_EVAL_CONFIG")
 set +e
 timeout --signal=TERM --kill-after=120 "$((MAX_MINUTES * 60))" \
-  protea train local --config "$PROTEA_CONFIG" --run-id "$PROTEA_RUN_ID" --allow-unregistered
+  protea train local --config "$PROTEA_CONFIG" --run-id "$PROTEA_RUN_ID" --allow-unregistered "${EVAL_ARGS[@]}"
 STATUS=$?
 set -e
 
