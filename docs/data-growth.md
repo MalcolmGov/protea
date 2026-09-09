@@ -87,6 +87,24 @@ a human looks), or **clean**. It never trains or approves on its own; it exits n
 `.github/workflows/review.yml` runs the same gate one-click against the R2 files (spends nothing) and writes the
 annotated copy back to `s3://<bucket>/reviewed/`.
 
+### Blending into training (free, the stage before a run)
+
+A mined build has **no `tool_calling` training rows** — the review-approved synthetic rows are added to the
+train split as a separate stage. `dataset blend` does it: drop rejected rows, scrub PII in the synthetic rows
+(the build already scrubbed the mined rows; synthetic rows have not been through a build), dedup the combined
+set, mark the survivors approved, and write a merged train split. Only the train split is touched —
+validation/test/golden stay the mined build's, so the eval hold-out is never diluted.
+
+```bash
+protea dataset blend \
+  protea_data/agent-training/0.2.0/train.jsonl \
+  reviewed_tool_calling.jsonl \
+  --out protea_data/agent-training/0.2.0/train.blended.jsonl   # --approved-only to take only signed-off rows
+```
+
+A training config then points `dataset.train` at `train.blended.jsonl` (see `protea-agent-8b-qlora-0.2.yaml`).
+So the full path is **build → synthesize → review → blend → train**, and only synthesize spends money.
+
 ### Teacher choice (C3)
 - **Bulk → `claude-sonnet-5`.** Strong at tool-calling / structured output (well above the 8B student) and much
   cheaper per seed than Opus. Every completion is `expect`-gated, so quality is filtered regardless of teacher.
