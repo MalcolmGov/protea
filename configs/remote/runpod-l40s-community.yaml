@@ -1,0 +1,15 @@
+# L40S on RunPod COMMUNITY cloud — the fallback when secure-cloud capacity is dry (A100/A6000/L40S secure can
+# all be out at busy times). Community has far more GPUs and is cheaper, but runs on third-party-hosted
+# machines rather than RunPod's own datacenter — a deliberate data-placement choice, made per run. Fits the
+# QLoRA-8B job in 48GB. Everything else matches runpod-l40s.yaml.
+provider: runpod
+gpu: l40s
+gpu_count: 1
+image: ghcr.io/malcolmgov/protea-train:latest
+spot: false
+storage:
+  kind: s3
+  uri: s3://YOUR_R2_BUCKET/agent-training
+  endpoint: https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
+checkpoint_sync_minutes: 10
+runpod: {cloud_type: COMMUNITY, volume_gb: 100, container_disk_gb: 50}

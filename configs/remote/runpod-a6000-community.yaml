@@ -1,0 +1,15 @@
+# A6000 on RunPod COMMUNITY cloud — the fallback when secure-cloud capacity is dry. Community has far more
+# GPUs and is cheaper, but runs on third-party-hosted machines rather than RunPod's own datacenter — a
+# deliberate data-placement choice, made per run. Fits the QLoRA-8B job in 48GB. Everything else matches
+# runpod-a6000.yaml.
+provider: runpod
+gpu: a6000
+gpu_count: 1
+image: ghcr.io/malcolmgov/protea-train:latest
+spot: false
+storage:
+  kind: s3
+  uri: s3://YOUR_R2_BUCKET/agent-training
+  endpoint: https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
+checkpoint_sync_minutes: 10
+runpod: {cloud_type: COMMUNITY, volume_gb: 100, container_disk_gb: 50}
