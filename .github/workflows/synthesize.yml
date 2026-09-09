@@ -1,0 +1,119 @@
+name: Synthesize tool-calling data (teacher)
+
+# One-click eval-checked synthesis: a teacher model completes tool-calling seeds, and only completions that
+# satisfy each seed's own `expect` (right tool called, right thing said) are kept. Spends TEACHER API tokens
+# (Anthropic), NOT GPU — cheaper and lower-risk than a training run.
+#
+# Set these repository secrets first (Settings → Secrets and variables → Actions → New repository secret):
+#   ANTHROPIC_API_KEY     - the teacher model's API key
+#   R2_ACCESS_KEY_ID      - Cloudflare R2 access key id       (already set for training)
+#   R2_SECRET_ACCESS_KEY  - Cloudflare R2 secret access key   (already set for training)
+# And upload a seeds file (from `protea dataset build`, at protea_data/.../seeds/tool_calling_seeds.jsonl) to
+# your R2 bucket at the `seeds_key` path below — a small pilot slice is fine to start.
+#
+# Recommended flow: run once with confirm=dry-run (validates with the mock provider, spends nothing), then
+# confirm=run with a small `limit` to pilot the teacher, measure the keep-rate, and only then scale up.
+on:
+  workflow_dispatch:
+    inputs:
+      bucket:
+        description: R2 bucket name (e.g. protea-runs)
+        required: true
+      endpoint:
+        description: R2 S3 endpoint, e.g. https://<account-id>.r2.cloudflarestorage.com
+        required: true
+      seeds_key:
+        description: R2 key of the seeds JSONL to synthesize from
+        required: true
+        default: seeds/pilot.jsonl
+      teacher:
+        description: Teacher model (bulk = claude-sonnet-5; premium = claude-opus-5)
+        required: true
+        default: claude-sonnet-5
+      limit:
+        description: Max seeds to process (pilot small first)
+        required: true
+        default: "300"
+      confirm:
+        description: dry-run validates with the mock provider (no spend); run calls the teacher (spends tokens)
+        required: true
+        default: dry-run
+        type: choice
+        options: [dry-run, run]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: synthesize
+  cancel-in-progress: false
+
+env:
+  AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+  AWS_ENDPOINT_URL: ${{ inputs.endpoint }}
+  AWS_DEFAULT_REGION: auto
+
+jobs:
+  synthesize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Hash-pinned, wheels-only install (locked versions, no setup-script execution). base.txt carries the
+      # Anthropic SDK; protea itself is imported from source via PYTHONPATH.
+      - run: "pip install --only-binary :all: --require-hashes -r requirements/base.txt"
+
+      # Proprietary seeds live in R2, never in the repo. Upload them once (see header) and name the key above.
+      - name: Fetch seeds from R2
+        env:
+          BUCKET: ${{ inputs.bucket }}
+          SEEDS_KEY: ${{ inputs.seeds_key }}
+        run: aws s3 cp "s3://${BUCKET}/${SEEDS_KEY}" seeds.jsonl
+
+      # dry-run: the mock provider never calls the real tools, so it keeps ~nothing — it proves the pipeline,
+      # the seed parsing and the golden-lock without spending a cent.
+      - name: Dry-run (mock provider — no tokens spent)
+        if: ${{ inputs.confirm != 'run' }}
+        env:
+          LIMIT: ${{ inputs.limit }}
+        run: |
+          PYTHONPATH=. python -m protea.cli dataset synthesize seeds.jsonl \
+            --provider mock --limit "$LIMIT" \
+            --golden-lock evaluation/zarabench/0.1/golden.lock \
+            --out synthetic_tool_calling.jsonl
+
+      # run: the teacher completes each seed; only completions that satisfy the seed's expectations are kept.
+      - name: Run (teacher — spends Anthropic tokens)
+        if: ${{ inputs.confirm == 'run' }}
+        env:
+          LIMIT: ${{ inputs.limit }}
+          TEACHER: ${{ inputs.teacher }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          PYTHONPATH=. python -m protea.cli dataset synthesize seeds.jsonl \
+            --provider anthropic --model "$TEACHER" --limit "$LIMIT" \
+            --golden-lock evaluation/zarabench/0.1/golden.lock \
+            --out synthetic_tool_calling.jsonl --confirm
+
+      # Kept completions carry the teacher as generator_model and go through the review lane before they train.
+      - name: Upload accepted completions to R2
+        if: ${{ inputs.confirm == 'run' }}
+        env:
+          BUCKET: ${{ inputs.bucket }}
+        run: |
+          TS=$(date -u +%Y%m%dT%H%M%SZ)
+          DEST="s3://${BUCKET}/synthetic/tool_calling-${TS}.jsonl"
+          aws s3 cp synthetic_tool_calling.jsonl "$DEST"
+          echo "kept $(wc -l < synthetic_tool_calling.jsonl) completions -> $DEST"
+
+      - name: Summary
+        if: always()
+        run: |
+          if [ -f synthetic_tool_calling.jsonl ]; then
+            echo "accepted completions: $(wc -l < synthetic_tool_calling.jsonl)"
+          else
+            echo "no output written"
+          fi
