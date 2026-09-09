@@ -68,6 +68,25 @@ protea dataset synthesize protea_data/agent-training/0.2.0/seeds/tool_calling_se
 Kept completions carry the teacher as their `generator_model` and go through the normal review lane before they
 train. Merge them into the training split once reviewed.
 
+### Reviewing what you synthesised (free, before it trains)
+
+Synthesis only gates *correctness* (the seed's `expect`). The softer checks `dataset build` applies to mined
+rows — secret scan, PII scan, golden-lock leakage, dedup, degenerate/refusal targets — have **not** run on the
+kept rows yet, because they never pass through a build until you blend them in. Run the review gate first:
+
+```bash
+protea dataset review protea_data/agent-training/0.2.0/synthetic_tool_calling.jsonl \
+  --reference protea_data/agent-training/0.2.0/train.jsonl \
+  --golden-lock evaluation/zarabench/0.1/golden.lock \
+  --out reviewed.jsonl                 # --approve-clean stamps clean rows 'approved'; a human still signs off
+```
+
+It sorts every row into **blocked** (a secret, a golden-lock family, broken provenance — never train these),
+**flagged** (PII, a near-duplicate of another kept row or an existing train row, a degenerate/refusal target —
+a human looks), or **clean**. It never trains or approves on its own; it exits non-zero if anything is blocked.
+`.github/workflows/review.yml` runs the same gate one-click against the R2 files (spends nothing) and writes the
+annotated copy back to `s3://<bucket>/reviewed/`.
+
 ### Teacher choice (C3)
 - **Bulk → `claude-sonnet-5`.** Strong at tool-calling / structured output (well above the 8B student) and much
   cheaper per seed than Opus. Every completion is `expect`-gated, so quality is filtered regardless of teacher.
@@ -81,5 +100,7 @@ train. Merge them into the training split once reviewed.
 - **Golden lock** on both build and synthesis keeps sealed ZaraBench families out of training — no eval leakage.
 - **Eval-gated synthesis:** a completion that does not satisfy its seed's `expect` is discarded (validated with
   the mock provider: 0/5 kept, since mock never calls the real tools — the gate works).
-- **Review lane:** synthesised rows are `review_status: pending` until a human signs off.
+- **Review lane:** synthesised rows are `review_status: pending` until a human signs off — run `dataset review`
+  (see above) to sort them into blocked / flagged / clean first; it applies the build's secret + PII scan to
+  rows that have not yet been through a build.
 - **PII scrub + secret scan** run on every build; any secret finding blocks the artefact.

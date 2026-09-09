@@ -331,6 +331,111 @@ def dataset_synthesize(
         typer.secho(f"  {r.seed_id}: {'; '.join(r.problems)}", fg=typer.colors.YELLOW)
 
 
+def _held_out_families(lock: Path) -> frozenset[str]:
+    """Read the sealed families straight from the lock JSON — no eval stack needed just to review data."""
+    if not lock.exists():
+        return frozenset()
+    return frozenset(json.loads(lock.read_text(encoding="utf-8")).get("held_out_families", []))
+
+
+@dataset_app.command("review")
+def dataset_review(
+    inputs: list[Path] = typer.Argument(..., exists=True, help="Synthesised JSONL file(s) to review."),
+    reference: Path | None = typer.Option(
+        None, exists=True, help="An existing training split (e.g. train.jsonl) to cross-dedup against."
+    ),
+    golden_lock: Path = typer.Option(
+        Path("evaluation/zarabench/0.1/golden.lock"), help="Sealed families here are eval leakage → blocked."
+    ),
+    out: Path | None = typer.Option(
+        None, help="Write an annotated copy: review_status set (approved=clean, rejected=blocked, else pending)."
+    ),
+    approve_clean: bool = typer.Option(
+        False, help="With --out, mark clean rows 'approved'. Off by default — a human still signs the lane off."
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Emit the report as JSON instead of a table."),
+) -> None:
+    """Review kept synthetic rows before they train: dedup, PII/secret scan, quality heuristics, distribution.
+
+    Correctness is already gated at synthesis (the seed's `expect`). This is the softer gate `dataset build`
+    would apply — it never trains or approves on its own; it sorts rows into blocked / flagged / clean so the
+    human review lane knows where to look.
+    """
+    from protea.data_pipeline.review import (
+        LANE_BLOCKED,
+        LANE_CLEAN,
+        LANE_FLAGGED,
+        RowReview,
+        reference_shingles,
+        review_examples,
+    )
+    from protea.schemas.examples import ReviewStatus, TrainingExample, iter_examples
+
+    examples: list[TrainingExample] = []
+    parse_errors: list[dict] = []
+    for path in inputs:
+        for lineno, line in iter_examples(path):
+            try:
+                examples.append(TrainingExample.model_validate_json(line))
+            except (ValueError, TypeError) as exc:
+                parse_errors.append({"file": str(path), "line": lineno, "error": str(exc).splitlines()[0][:200]})
+
+    ref = None
+    if reference is not None:
+        ref_examples = [
+            TrainingExample.model_validate_json(line) for _, line in iter_examples(reference)
+        ]
+        ref = reference_shingles(ref_examples)
+
+    report = review_examples(examples, reference_targets=ref, held_out_families=_held_out_families(golden_lock))
+    report.total = len(examples) + len(parse_errors)
+    report.valid = len(examples)
+    report.invalid = len(parse_errors)
+    report.errors = parse_errors[:50]
+
+    if out is not None:
+        lane_status = {LANE_CLEAN: ReviewStatus.APPROVED if approve_clean else ReviewStatus.PENDING,
+                       LANE_FLAGGED: ReviewStatus.PENDING, LANE_BLOCKED: ReviewStatus.REJECTED}
+        by_id: dict[str, RowReview] = {r.id: r for r in report.rows}
+        with out.open("w", encoding="utf-8") as fh:
+            for ex in examples:
+                rv = by_id.get(ex.metadata.id)
+                if rv is not None:
+                    ex.metadata.review_status = lane_status[rv.lane]
+                fh.write(ex.model_dump_json() + "\n")
+
+    if as_json:
+        typer.echo(report.model_dump_json(indent=2))
+    else:
+        _print_review(report)
+
+    if not report.ok:
+        _fail(f"review found {report.blocked} blocked row(s) and {report.invalid} invalid row(s)")
+
+
+def _print_review(report) -> None:
+    typer.echo(f"reviewed {report.valid} row(s)" + (f" ({report.invalid} invalid)" if report.invalid else ""))
+    typer.secho(f"  clean   {report.clean}", fg=typer.colors.GREEN)
+    typer.secho(f"  flagged {report.flagged}", fg=typer.colors.YELLOW)
+    typer.secho(f"  blocked {report.blocked}", fg=typer.colors.RED if report.blocked else None)
+    typer.echo("blocking:")
+    typer.echo(f"  secrets {report.secret_rows} · golden-lock {report.golden_lock_violations} · "
+               f"bad provenance {report.invariant_violations}")
+    typer.echo("flags:")
+    typer.echo(f"  pii {report.pii_rows}{' ' + str(report.pii_by_kind) if report.pii_by_kind else ''} · "
+               f"dup-in-batch {report.duplicates_within} · dup-vs-train {report.duplicates_vs_reference} · "
+               f"degenerate {report.degenerate} · refusal-shaped {report.refusal_shaped}")
+    top = report.top_families[:8]
+    if top:
+        typer.echo("top families: " + ", ".join(f"{f}×{n}" for f, n in top))
+    typer.echo(f"languages: {report.by_language}")
+    from protea.data_pipeline.review import LANE_BLOCKED, LANE_CLEAN
+
+    for r in [r for r in report.rows if r.lane != LANE_CLEAN][:15]:
+        color = typer.colors.RED if r.lane == LANE_BLOCKED else typer.colors.YELLOW
+        typer.secho(f"  [{r.lane}] {r.family or '?'} {r.id[:8]}: {'; '.join(r.reasons)}", fg=color)
+
+
 # ---- registry -----------------------------------------------------------------------------------
 def _registries():
     from protea.config import get_settings
