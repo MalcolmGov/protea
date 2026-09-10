@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import threading
 import time
 from typing import Any
@@ -16,7 +17,20 @@ from protea.providers.base import ModelProvider, ProviderError
 from protea.schemas.generation import GenerationRequest, GenerationResponse, ModelHealth, ToolCall, Usage
 
 _OPEN, _CLOSE = "<tool_call>", "</tool_call>"
+_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 MAX_NEW_TOKENS_CAP = 4096
+
+
+def strip_reasoning(text: str) -> str:
+    """Drop Qwen-style ``<think>...</think>`` reasoning traces from generated text.
+
+    The reasoning block is the model's scratch-work, not its answer. Left in, it is prepended to the content the
+    caller sees — and that breaks bare-output checks: a structured-output or workflow task emits perfectly valid
+    JSON but fails ``json_parsable`` because an (often empty) ``<think></think>`` sits in front of it. Remove every
+    complete block; if one is left unterminated (output cut off mid-reasoning), drop from the opener onward."""
+    text = _THINK_RE.sub("", text)
+    head, sep, _ = text.partition("<think>")
+    return (head if sep else text).strip()
 
 
 def to_chat_messages(request: GenerationRequest) -> list[dict[str, Any]]:
@@ -52,6 +66,7 @@ def to_chat_tools(request: GenerationRequest) -> list[dict[str, Any]] | None:
 
 def parse_tool_calls(text: str) -> tuple[str, list[ToolCall]]:
     """Split generated text into plain content and the tool calls it carries."""
+    text = strip_reasoning(text)  # the <think> trace is not part of the answer, and it breaks bare-output checks
     calls: list[ToolCall] = []
     content_parts: list[str] = []
     head, *blocks = text.split(_OPEN)
