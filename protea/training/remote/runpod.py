@@ -23,7 +23,7 @@ RUNPOD_GPU_IDS = {
 DEPLOY_MUTATION = """mutation {{
   podFindAndDeployOnDemand(input: {{
     cloudType: {cloud_type}, gpuCount: {gpu_count}, volumeInGb: {volume_gb}, containerDiskInGb: {disk_gb},
-    minVcpuCount: 8, minMemoryInGb: 32, gpuTypeId: "{gpu_type}", name: "{name}", imageName: "{image}",
+    minVcpuCount: 2, minMemoryInGb: 8, gpuTypeId: "{gpu_type}", name: "{name}", imageName: "{image}",
     dockerArgs: "{docker_args}", ports: "22/tcp", volumeMountPath: "{volume_mount_path}",
     env: [{env}]
   }}) {{ id imageName machineId }}

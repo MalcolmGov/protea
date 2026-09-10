@@ -1,0 +1,14 @@
+# H100-80GB on RunPod secure cloud. High-end GPUs are often *more* available than A100/A6000/L40S (fewer renters),
+# so this is a strong fallback when the cheaper cards are supply-constrained. Trains fastest (~1h), so total cost
+# is competitive (~$3) despite the higher hourly rate. Everything else matches runpod-a100.yaml.
+provider: runpod
+gpu: h100-80gb
+gpu_count: 1
+image: ghcr.io/malcolmgov/protea-train:latest
+spot: false
+storage:
+  kind: s3
+  uri: s3://YOUR_R2_BUCKET/agent-training
+  endpoint: https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
+checkpoint_sync_minutes: 10
+runpod: {cloud_type: SECURE, volume_gb: 20, container_disk_gb: 50}
