@@ -242,6 +242,11 @@ def test_eval_entrypoint_is_shipped_and_scores_local(catalogue):
     assert "--per-category" in body
     assert 'protea-storage push "$OUT"' in body  # the report is shipped to storage
     assert 'exec >"$LOG" 2>&1' in body and "trap push_log EXIT" in body  # same off-box log capture as training
+    # Scratch (the adapter copy + the report dir) must NOT live under $WORKDIR: /workspace/protea is root-owned and
+    # the image runs as the unprivileged `protea` user, so writing there fails EACCES — the adapter never downloads,
+    # every task errors, and no report is pushed. Keep all writes under a writable base.
+    assert 'ADAPTER_DIR="$WORKDIR/' not in body and 'OUT="$WORKDIR/' not in body
+    assert "WORKBASE=" in body
     if shutil.which("bash"):
         subprocess.run(["bash", "-n", str(script)], check=True)
 
