@@ -185,6 +185,67 @@ def test_runpod_debug_hold_keeps_a_failed_pod_alive(catalogue, monkeypatch):
         assert 'dockerArgs: "entrypoint-train.sh"' in build_adapter(rp).plan(req).artifacts["runpod-deploy.graphql"]
 
 
+def test_runpod_entrypoint_override_and_eval_env_passthrough(catalogue, monkeypatch):
+    """PROTEA_ENTRYPOINT swaps the container command (e.g. the eval entrypoint), and the set PROTEA_* eval knobs are
+    forwarded into the pod env so the eval entrypoint knows which adapter to score. Training leaves them unset."""
+    cfg = load_config(QLORA, "training")
+    rp = load_config(REPO / "configs/remote/runpod-a100.yaml", "remote")
+    req = PlanRequest(
+        cfg=cfg,
+        cfg_path=str(QLORA),
+        cfg_hash=config_hash(cfg),
+        estimate=estimate(cfg, rp, catalogue["a100-80gb"], 1000),
+        run_id="r1",
+    )
+    for var in (
+        "PROTEA_ENTRYPOINT",
+        "PROTEA_DEBUG_HOLD_MINUTES",
+        "PROTEA_ADAPTER_KEY",
+        "PROTEA_BASE_MODEL",
+        "PROTEA_EVAL_PER_CATEGORY",
+        "PROTEA_EVAL_CATEGORIES",
+        "PROTEA_SERVED_AS",
+    ):
+        monkeypatch.delenv(var, raising=False)
+
+    # Default: training entrypoint, none of the eval knobs leak into the pod env.
+    m = build_adapter(rp).plan(req).artifacts["runpod-deploy.graphql"]
+    assert 'dockerArgs: "entrypoint-train.sh"' in m
+    assert "PROTEA_ADAPTER_KEY" not in m
+
+    # Eval launch: swap the entrypoint and forward the eval knobs as pod env pairs.
+    monkeypatch.setenv("PROTEA_ENTRYPOINT", "entrypoint-eval.sh")
+    monkeypatch.setenv("PROTEA_ADAPTER_KEY", "checkpoints/x/y/adapter")
+    monkeypatch.setenv("PROTEA_BASE_MODEL", "Qwen/Qwen3-8B")
+    monkeypatch.setenv("PROTEA_EVAL_PER_CATEGORY", "2")
+    m = build_adapter(rp).plan(req).artifacts["runpod-deploy.graphql"]
+    assert 'dockerArgs: "entrypoint-eval.sh"' in m
+    assert '{ key: "PROTEA_ADAPTER_KEY", value: "checkpoints/x/y/adapter" }' in m
+    assert '{ key: "PROTEA_BASE_MODEL", value: "Qwen/Qwen3-8B" }' in m
+    assert '{ key: "PROTEA_EVAL_PER_CATEGORY", value: "2" }' in m
+
+
+def test_eval_entrypoint_is_shipped_and_scores_local(catalogue):
+    """The image ships the eval wrapper + the ZaraBench suite, and the wrapper scores the adapter with the free
+    in-process `local` provider (no judge, no API spend) and pushes the report."""
+    import shutil
+    import subprocess
+
+    dockerfile = (REPO / "deployment/protea/Dockerfile.train").read_text(encoding="utf-8")
+    assert "COPY evaluation ./evaluation" in dockerfile  # the suite tasks the scorer reads
+    assert "COPY deployment/protea/entrypoint-eval.sh /usr/local/bin/entrypoint-eval.sh" in dockerfile
+
+    script = REPO / "deployment/protea/entrypoint-eval.sh"
+    body = script.read_text(encoding="utf-8")
+    assert "protea evaluate run --provider local" in body
+    assert "PROTEA_LOCAL_ADAPTER" in body  # the local provider reads the adapter path from this env
+    assert "--per-category" in body
+    assert 'protea-storage push "$OUT"' in body  # the report is shipped to storage
+    assert 'exec >"$LOG" 2>&1' in body and "trap push_log EXIT" in body  # same off-box log capture as training
+    if shutil.which("bash"):
+        subprocess.run(["bash", "-n", str(script)], check=True)
+
+
 def test_runpod_launch_expands_secret_placeholders(catalogue, tmp_path, monkeypatch):
     """launch() substitutes ${SECRET} from the environment in memory; the on-disk artefact keeps placeholders."""
     from protea.training.remote import write_artifacts

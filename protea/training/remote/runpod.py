@@ -62,6 +62,20 @@ class RunPodAdapter(RemoteAdapter):
         # It is a plain URL, not a secret, so it is embedded directly rather than referenced by name.
         if self.remote.storage.endpoint:
             env_pairs.append(("AWS_ENDPOINT_URL", self.remote.storage.endpoint))
+        # Extra non-secret PROTEA_* knobs forwarded from the launcher environment to the pod when set. Used by the
+        # eval entrypoint (which adapter to score, base model, sample size) — training leaves them unset, so the
+        # pod env is unchanged for a normal run. Values are plain (a key, a model id, an int), never secrets.
+        for name in (
+            "PROTEA_ADAPTER_KEY",
+            "PROTEA_BASE_MODEL",
+            "PROTEA_EVAL_CONFIG",
+            "PROTEA_EVAL_PER_CATEGORY",
+            "PROTEA_EVAL_CATEGORIES",
+            "PROTEA_SERVED_AS",
+        ):
+            value = os.environ.get(name, "").strip()
+            if value:
+                env_pairs.append((name, value))
         env = ", ".join(f'{{ key: "{k}", value: "{v}" }}' for k, v in env_pairs)
         # Optional debug hold. RunPod deletes a pod the instant its container's main process exits, so a startup
         # crash in entrypoint-train.sh is invisible: the pod (and its logs) are gone before anyone can read them.
@@ -69,10 +83,14 @@ class RunPodAdapter(RemoteAdapter):
         # log stays readable in the RunPod console. A successful run short-circuits the `||` and exits normally, so
         # this never delays or bills a good run. The command holds no `$`/`"`, so it survives expandvars and the
         # GraphQL string unchanged. Leave the env unset for normal runs.
-        docker_args = "entrypoint-train.sh"
+        # The container's default command. PROTEA_ENTRYPOINT selects a different baked script (e.g.
+        # entrypoint-eval.sh to score an existing adapter instead of training); it must be a bare script name on
+        # PATH with no shell metacharacters, since it lands unquoted in the GraphQL dockerArgs string.
+        entrypoint = os.environ.get("PROTEA_ENTRYPOINT", "entrypoint-train.sh").strip() or "entrypoint-train.sh"
+        docker_args = entrypoint
         hold = os.environ.get("PROTEA_DEBUG_HOLD_MINUTES", "").strip()
         if hold.isdigit() and int(hold) > 0:
-            docker_args = f"entrypoint-train.sh || sleep {int(hold) * 60}"
+            docker_args = f"{entrypoint} || sleep {int(hold) * 60}"
         mutation = DEPLOY_MUTATION.format(
             cloud_type=rp.cloud_type,
             gpu_count=self.remote.gpu_count,
