@@ -72,6 +72,13 @@ class RunPodAdapter(RemoteAdapter):
             "PROTEA_EVAL_PER_CATEGORY",
             "PROTEA_EVAL_CATEGORIES",
             "PROTEA_SERVED_AS",
+            # synth entrypoint (which seeds to complete, open-weight teacher, targeting) — unset for train/eval.
+            "PROTEA_SEEDS_KEY",
+            "PROTEA_SYNTH_MODEL",
+            "PROTEA_SYNTH_LIMIT",
+            "PROTEA_SYNTH_SCENARIOS",
+            "PROTEA_SYNTH_TARGET_TOOLS",
+            "PROTEA_SYNTH_BALANCE",
         ):
             value = os.environ.get(name, "").strip()
             if value:

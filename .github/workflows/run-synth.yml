@@ -1,0 +1,167 @@
+name: Synthesize on GPU (open-weight teacher)
+
+# Complete tool-calling seeds on a rented GPU with an OPEN-WEIGHT teacher loaded in-process (the `local` provider)
+# — no proprietary teacher, no API tokens, so it stays clean on the "don't train a competing model on their
+# outputs" terms and bills to RunPod only. The pod runs entrypoint-synth.sh (selected via PROTEA_ENTRYPOINT): it
+# pulls the seeds from R2 (seeds_key), synthesizes the targeted, balanced selection, keeps only completions that
+# satisfy each seed's `expect`, and pushes them to R2 under synthetic/. Read the log with "Fetch training logs
+# (R2)" (prefix logs/). Then review (review.yml) and blend before training.
+#
+# NOTE ON THE PRINTED PLAN: the launcher prints a *training* cost/duration estimate — ignore it. Synthesis of a
+# few hundred seeds is GPU minutes, not the training run.
+on:
+  workflow_dispatch:
+    inputs:
+      bucket:
+        description: R2 bucket name (e.g. protea-runs)
+        required: true
+        default: protea-runs
+      endpoint:
+        description: R2 S3 endpoint, e.g. https://<account-id>.r2.cloudflarestorage.com
+        required: true
+      seeds_key:
+        description: R2 key of the tool_calling_seeds.jsonl to synthesize from
+        required: true
+        default: seeds/tool_calling_seeds.jsonl
+      teacher_model:
+        description: Open-weight teacher to load in-process (must fit the GPU; 8B–14B on a 48GB card)
+        required: true
+        default: Qwen/Qwen3-8B
+      scenarios:
+        description: Space-separated seed_id scenario substrings to target (e.g. "write-after-confirm write-confirms")
+        required: false
+        default: "write-after-confirm write-confirms"
+      target_tools:
+        description: Optional space-separated expect.tool names to restrict to (blank = any)
+        required: false
+        default: ""
+      limit:
+        description: Max seeds to synthesize (pilot small first)
+        required: true
+        default: "340"
+      config:
+        description: Training config (used ONLY to satisfy the launcher and estimate; not what runs on the pod)
+        required: true
+        default: configs/training/protea-agent-8b-qlora-0.2.yaml
+      remote:
+        description: GPU target (48GB fits an 8B–14B teacher; the launch falls through targets until one has capacity)
+        required: true
+        default: configs/remote/runpod-a6000-community.yaml
+        type: choice
+        options:
+          - configs/remote/runpod-a6000-community.yaml
+          - configs/remote/runpod-l40s-community.yaml
+          - configs/remote/runpod-h100.yaml
+          - configs/remote/runpod-a100.yaml
+          - configs/remote/runpod-a6000.yaml
+          - configs/remote/runpod-l40s.yaml
+      train_key:
+        description: R2 key of the train split (fetched locally so the launcher can hash the config's dataset)
+        required: true
+        default: protea_data/0.2.0/train.blended.jsonl
+      val_key:
+        description: R2 key of the validation split
+        required: true
+        default: protea_data/0.2.0/validation.jsonl
+      confirm:
+        description: dry-run prints the plan only; launch rents the GPU for synthesis
+        required: true
+        default: dry-run
+        type: choice
+        options: [dry-run, launch]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: run-synth
+  cancel-in-progress: false
+
+env:
+  AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+  AWS_ENDPOINT_URL: ${{ inputs.endpoint }}
+  AWS_DEFAULT_REGION: auto
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: "pip install --only-binary :all: --require-hashes -r requirements/base.txt"
+
+      - name: Point the RunPod configs at your R2 bucket and endpoint
+        env:
+          BUCKET: ${{ inputs.bucket }}
+          ENDPOINT: ${{ inputs.endpoint }}
+        run: |
+          python - <<'PY'
+          import os, glob, pathlib, yaml
+          for f in glob.glob("configs/remote/runpod*.yaml"):
+              p = pathlib.Path(f)
+              cfg = yaml.safe_load(p.read_text())
+              cfg["storage"]["uri"] = f"s3://{os.environ['BUCKET']}"
+              cfg["storage"]["endpoint"] = os.environ["ENDPOINT"]
+              p.write_text(yaml.safe_dump(cfg, sort_keys=False))
+          PY
+
+      # The launcher hashes the config's training dataset to plan; fetch it into the paths the config expects. The
+      # synth pod does NOT use it — it pulls the seeds (seeds_key) from R2 — but `train remote` reads it to plan.
+      - name: Fetch the dataset from R2 (so the launcher can hash it)
+        env:
+          BUCKET: ${{ inputs.bucket }}
+          CONFIG: ${{ inputs.config }}
+          TRAIN_KEY: ${{ inputs.train_key }}
+          VAL_KEY: ${{ inputs.val_key }}
+        run: |
+          TRAIN_DST=$(python -c "import yaml; print(yaml.safe_load(open('$CONFIG'))['dataset']['train'])")
+          VAL_DST=$(python -c "import yaml; print(yaml.safe_load(open('$CONFIG'))['dataset']['validation'])")
+          mkdir -p "$(dirname "$TRAIN_DST")" "$(dirname "$VAL_DST")"
+          aws s3 cp "s3://${BUCKET}/${TRAIN_KEY}" "$TRAIN_DST"
+          aws s3 cp "s3://${BUCKET}/${VAL_KEY}"   "$VAL_DST"
+
+      - name: Plan (dry-run — rents nothing)
+        if: ${{ inputs.confirm != 'launch' }}
+        env:
+          CONFIG: ${{ inputs.config }}
+          REMOTE: ${{ inputs.remote }}
+        run: |
+          PYTHONPATH=. python -m protea.cli train remote \
+            --config "$CONFIG" --remote "$REMOTE" --allow-unregistered
+
+      # Launch synthesis. PROTEA_ENTRYPOINT makes the pod run entrypoint-synth.sh instead of the trainer; the
+      # launcher forwards the PROTEA_* synth knobs (seeds, teacher, targeting, limit) to the pod.
+      - name: Launch synthesis (tries GPU targets until one has capacity)
+        if: ${{ inputs.confirm == 'launch' }}
+        env:
+          CONFIG: ${{ inputs.config }}
+          REMOTE: ${{ inputs.remote }}
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          PROTEA_STORAGE_CREDENTIALS: ${{ secrets.R2_ACCESS_KEY_ID }}:${{ secrets.R2_SECRET_ACCESS_KEY }}
+          PROTEA_ENTRYPOINT: entrypoint-synth.sh
+          PROTEA_SEEDS_KEY: ${{ inputs.seeds_key }}
+          PROTEA_SYNTH_MODEL: ${{ inputs.teacher_model }}
+          PROTEA_SYNTH_SCENARIOS: ${{ inputs.scenarios }}
+          PROTEA_SYNTH_TARGET_TOOLS: ${{ inputs.target_tools }}
+          PROTEA_SYNTH_LIMIT: ${{ inputs.limit }}
+        run: |
+          CANDIDATES=$(printf '%s\n' "$REMOTE" \
+            configs/remote/runpod-a6000-community.yaml \
+            configs/remote/runpod-l40s-community.yaml \
+            configs/remote/runpod-h100.yaml \
+            configs/remote/runpod-a100.yaml | awk 'NF && !seen[$0]++')
+          for R in $CANDIDATES; do
+            echo "=== attempting synth launch on $R ==="
+            if PYTHONPATH=. python -m protea.cli train remote \
+                 --config "$CONFIG" --remote "$R" --allow-unregistered --confirm; then
+              echo "launched on $R"
+              exit 0
+            fi
+            echo "$R has no capacity right now; trying the next target"
+          done
+          echo "all GPU targets are supply-constrained at the moment — re-run shortly"
+          exit 1
