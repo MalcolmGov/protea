@@ -157,6 +157,34 @@ def test_runpod_volume_does_not_shadow_the_code(catalogue):
     assert 'volumeMountPath: "/workspace"' not in mutation
 
 
+def test_runpod_debug_hold_keeps_a_failed_pod_alive(catalogue, monkeypatch):
+    """PROTEA_DEBUG_HOLD_MINUTES wraps the entrypoint so a *failed* pod sleeps instead of vanishing (and taking
+    its crash log with it). Unset -> the bare entrypoint; a successful run always short-circuits the `|| sleep`."""
+    cfg = load_config(QLORA, "training")
+    rp = load_config(REPO / "configs/remote/runpod-a100.yaml", "remote")
+    req = PlanRequest(
+        cfg=cfg,
+        cfg_path=str(QLORA),
+        cfg_hash=config_hash(cfg),
+        estimate=estimate(cfg, rp, catalogue["a100-80gb"], 1000),
+        run_id="r1",
+    )
+
+    monkeypatch.delenv("PROTEA_DEBUG_HOLD_MINUTES", raising=False)
+    assert 'dockerArgs: "entrypoint-train.sh"' in build_adapter(rp).plan(req).artifacts["runpod-deploy.graphql"]
+
+    monkeypatch.setenv("PROTEA_DEBUG_HOLD_MINUTES", "30")
+    held = build_adapter(rp).plan(req).artifacts["runpod-deploy.graphql"]
+    assert 'dockerArgs: "entrypoint-train.sh || sleep 1800"' in held
+    # No `$` or `"` in the wrapper, so it survives expandvars and the GraphQL string unchanged.
+    assert '$' not in "entrypoint-train.sh || sleep 1800"
+
+    # Non-numeric / zero / blank are ignored (no accidental hold on normal runs).
+    for junk in ("", "0", "abc", "-5"):
+        monkeypatch.setenv("PROTEA_DEBUG_HOLD_MINUTES", junk)
+        assert 'dockerArgs: "entrypoint-train.sh"' in build_adapter(rp).plan(req).artifacts["runpod-deploy.graphql"]
+
+
 def test_runpod_launch_expands_secret_placeholders(catalogue, tmp_path, monkeypatch):
     """launch() substitutes ${SECRET} from the environment in memory; the on-disk artefact keeps placeholders."""
     from protea.training.remote import write_artifacts
