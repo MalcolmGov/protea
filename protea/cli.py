@@ -281,16 +281,48 @@ def dataset_synthesize(
     out: Path = typer.Option(Path("synthetic_tool_calling.jsonl")),
     confirm: bool = typer.Option(False, "--confirm", help="Required for non-mock providers."),
     include_contaminated: bool = typer.Option(False, help="Also process seeds flagged by the contamination check."),
+    target_tool: list[str] = typer.Option(
+        [], "--target-tool", help="Keep only seeds whose expect.tool is one of these (repeatable). Targets under-covered tools."
+    ),
+    scenario: list[str] = typer.Option(
+        [], "--scenario", help="Keep only seeds whose seed_id contains one of these substrings, e.g. write-after-confirm (repeatable)."
+    ),
+    balance: bool = typer.Option(
+        False, "--balance/--no-balance", help="Fill the limit round-robin across target tools instead of file order, so no tool dominates."
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Print the selection breakdown (by tool and scenario) and exit. Builds no provider, spends nothing."
+    ),
     golden_lock: Path = typer.Option(
         Path("evaluation/zarabench/0.1/golden.lock"), help="Seeds from families sealed in this lock are skipped."
     ),
 ) -> None:
     """Complete eval-seeded tool-calling turns with a teacher model and keep only completions that satisfy the eval expectations."""
     from protea.data_pipeline.normalize.packages import ToolCallingSeed
-    from protea.data_pipeline.synthetic import synthesize
+    from protea.data_pipeline.synthetic import select_seeds, selection_summary, synthesize
     from protea.evaluation.golden import held_out_families
     from protea.providers import ProviderNotConfigured, build_provider
     from protea.schemas.examples import iter_examples
+
+    held_out = held_out_families(golden_lock)
+    all_seeds = (ToolCallingSeed.model_validate_json(line) for _, line in iter_examples(seeds))
+    items, skipped_held_out = select_seeds(
+        all_seeds,
+        limit=limit,
+        held_out=held_out,
+        include_contaminated=include_contaminated,
+        target_tools=frozenset(target_tool) or None,
+        scenarios=tuple(scenario),
+        balance=balance,
+    )
+
+    # A dry run is the spend-free preview: show exactly what would be synthesized, build no provider, call nothing.
+    if dry_run:
+        summary = selection_summary(items)
+        typer.echo(json.dumps(summary, indent=2, ensure_ascii=False))
+        if skipped_held_out:
+            typer.echo(f"skipped {skipped_held_out} seed(s) from families held out by {golden_lock}")
+        return
 
     if provider != "mock" and not confirm:
         _fail(
@@ -302,19 +334,6 @@ def dataset_synthesize(
     except ProviderNotConfigured as exc:
         _fail(str(exc))
         return
-    held_out = held_out_families(golden_lock)
-    items = []
-    skipped_held_out = 0
-    for _, line in iter_examples(seeds):
-        s = ToolCallingSeed.model_validate_json(line)
-        if s.contaminated and not include_contaminated:
-            continue
-        if s.family in held_out:
-            skipped_held_out += 1
-            continue
-        items.append(s)
-        if len(items) >= limit:
-            break
 
     async def run() -> list:
         return [await synthesize(s, prov, dataset_version="0.1.0-synthetic") for s in items]
