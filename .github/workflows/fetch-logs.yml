@@ -1,0 +1,53 @@
+name: Fetch training logs (R2)
+
+# Reads objects the pod wrote to R2 (by default the entrypoint logs under logs/) and prints them into this
+# workflow's log, so a crashed remote run can be diagnosed even though its pod self-deleted. Free: no GPU, just an
+# S3 read with the R2 secrets already in the repo. Run it after a training launch that died, then read the output.
+on:
+  workflow_dispatch:
+    inputs:
+      bucket:
+        description: R2 bucket name (e.g. protea-runs)
+        required: true
+        default: protea-runs
+      endpoint:
+        description: R2 S3 endpoint, e.g. https://<account-id>.r2.cloudflarestorage.com
+        required: true
+      prefix:
+        description: Key prefix to read (the entrypoint writes to logs/)
+        required: true
+        default: logs/
+
+permissions:
+  contents: read
+
+env:
+  AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+  AWS_ENDPOINT_URL: ${{ inputs.endpoint }}
+  AWS_DEFAULT_REGION: auto
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: List and print objects from R2
+        env:
+          BUCKET: ${{ inputs.bucket }}
+          PREFIX: ${{ inputs.prefix }}
+        run: |
+          echo "=== objects under s3://${BUCKET}/${PREFIX} ==="
+          aws s3 ls "s3://${BUCKET}/${PREFIX}" --recursive || echo "(nothing listed — the pod may not have pushed anything)"
+          echo
+          tmp="$(mktemp -d)"
+          aws s3 cp "s3://${BUCKET}/${PREFIX}" "$tmp" --recursive || true
+          found=0
+          while IFS= read -r f; do
+            found=1
+            echo "===================== BEGIN ${f#$tmp/} ====================="
+            cat "$f"
+            echo "====================== END ${f#$tmp/} ======================"
+            echo
+          done < <(find "$tmp" -type f | sort)
+          [ "$found" = 0 ] && echo "No files were downloaded from s3://${BUCKET}/${PREFIX} — nothing to show."
+          exit 0

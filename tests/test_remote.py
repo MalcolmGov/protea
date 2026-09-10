@@ -238,6 +238,12 @@ def test_train_entrypoint_is_wired_and_valid():
     assert "protea train local --config" in body
     assert "--eval" in body  # the run self-evaluates the adapter before the final push
 
+    # The run captures its output to a file and ships it to storage on ANY exit, so a startup crash on a pod that
+    # self-deletes is still diagnosable off-box (the console logs die with the pod).
+    assert 'exec >"$LOG" 2>&1' in body
+    assert "trap push_log EXIT" in body
+    assert 'protea-storage push "$WORKDIR/logs"' in body
+
     if shutil.which("bash"):
         subprocess.run(["bash", "-n", str(script)], check=True)
 
