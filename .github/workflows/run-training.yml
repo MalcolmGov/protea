@@ -29,11 +29,12 @@ on:
         default: configs/remote/runpod-a100.yaml
         type: choice
         options:
+          - configs/remote/runpod-a6000-community.yaml
+          - configs/remote/runpod-l40s-community.yaml
+          - configs/remote/runpod-h100.yaml
           - configs/remote/runpod-a100.yaml
           - configs/remote/runpod-a6000.yaml
           - configs/remote/runpod-l40s.yaml
-          - configs/remote/runpod-l40s-community.yaml
-          - configs/remote/runpod-a6000-community.yaml
       train_key:
         description: R2 key of the train split (matches the config's dataset.train)
         required: true
@@ -74,20 +75,21 @@ jobs:
       # the base deps; protea itself is imported from source via PYTHONPATH.
       - run: "pip install --only-binary :all: --require-hashes -r requirements/base.txt"
 
-      - name: Point the config at your R2 bucket and endpoint
+      # Point every RunPod remote config at your R2 bucket/endpoint, so the launch step can fall through several
+      # GPU targets (the chosen one first, then others) until one actually has capacity.
+      - name: Point the RunPod configs at your R2 bucket and endpoint
         env:
           BUCKET: ${{ inputs.bucket }}
           ENDPOINT: ${{ inputs.endpoint }}
-          REMOTE: ${{ inputs.remote }}
         run: |
           python - <<'PY'
-          import os, pathlib, yaml
-          p = pathlib.Path(os.environ["REMOTE"])
-          cfg = yaml.safe_load(p.read_text())
-          cfg["storage"]["uri"] = f"s3://{os.environ['BUCKET']}"
-          cfg["storage"]["endpoint"] = os.environ["ENDPOINT"]
-          p.write_text(yaml.safe_dump(cfg, sort_keys=False))
-          print(p.read_text())
+          import os, glob, pathlib, yaml
+          for f in glob.glob("configs/remote/runpod*.yaml"):
+              p = pathlib.Path(f)
+              cfg = yaml.safe_load(p.read_text())
+              cfg["storage"]["uri"] = f"s3://{os.environ['BUCKET']}"
+              cfg["storage"]["endpoint"] = os.environ["ENDPOINT"]
+              p.write_text(yaml.safe_dump(cfg, sort_keys=False))
           PY
 
       # The dataset is gitignored (proprietary; kept out of the public repo). We read the local paths the chosen
@@ -126,7 +128,10 @@ jobs:
             --config "$CONFIG" \
             --remote "$REMOTE" --allow-unregistered
 
-      - name: Launch (rents the GPU)
+      # Try the chosen GPU first, then fall through the other in-stock-friendly targets. RunPod returns
+      # SUPPLY_CONSTRAINT (non-zero exit) when a given GPU/cloud is momentarily out, so we advance to the next
+      # candidate and stop at the first that actually allocates a pod.
+      - name: Launch (tries GPU targets until one has capacity)
         if: ${{ inputs.confirm == 'launch' }}
         env:
           CONFIG: ${{ inputs.config }}
@@ -135,6 +140,19 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           PROTEA_STORAGE_CREDENTIALS: ${{ secrets.R2_ACCESS_KEY_ID }}:${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
-          PYTHONPATH=. python -m protea.cli train remote \
-            --config "$CONFIG" \
-            --remote "$REMOTE" --allow-unregistered --confirm
+          CANDIDATES=$(printf '%s\n' "$REMOTE" \
+            configs/remote/runpod-a6000-community.yaml \
+            configs/remote/runpod-l40s-community.yaml \
+            configs/remote/runpod-h100.yaml \
+            configs/remote/runpod-a100.yaml | awk 'NF && !seen[$0]++')
+          for R in $CANDIDATES; do
+            echo "=== attempting launch on $R ==="
+            if PYTHONPATH=. python -m protea.cli train remote \
+                 --config "$CONFIG" --remote "$R" --allow-unregistered --confirm; then
+              echo "launched on $R"
+              exit 0
+            fi
+            echo "$R has no capacity right now; trying the next target"
+          done
+          echo "all GPU targets are supply-constrained at the moment — re-run shortly"
+          exit 1

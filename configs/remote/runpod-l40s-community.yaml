@@ -12,4 +12,4 @@ storage:
   uri: s3://YOUR_R2_BUCKET/agent-training
   endpoint: https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
 checkpoint_sync_minutes: 10
-runpod: {cloud_type: COMMUNITY, volume_gb: 40, container_disk_gb: 50}
+runpod: {cloud_type: COMMUNITY, volume_gb: 20, container_disk_gb: 50}
