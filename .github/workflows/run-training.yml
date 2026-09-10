@@ -49,6 +49,13 @@ on:
         default: dry-run
         type: choice
         options: [dry-run, launch]
+      debug_hold_minutes:
+        description: >-
+          Debug only. If a launched pod dies within seconds/minutes, set this (e.g. 30) to keep a FAILED pod
+          alive that long so its crash log stays readable in the RunPod console (open the pod -> Logs). A
+          successful run ignores it. Leave blank for normal runs.
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -139,6 +146,7 @@ jobs:
           RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           PROTEA_STORAGE_CREDENTIALS: ${{ secrets.R2_ACCESS_KEY_ID }}:${{ secrets.R2_SECRET_ACCESS_KEY }}
+          PROTEA_DEBUG_HOLD_MINUTES: ${{ inputs.debug_hold_minutes }}
         run: |
           CANDIDATES=$(printf '%s\n' "$REMOTE" \
             configs/remote/runpod-a6000-community.yaml \

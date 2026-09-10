@@ -63,6 +63,16 @@ class RunPodAdapter(RemoteAdapter):
         if self.remote.storage.endpoint:
             env_pairs.append(("AWS_ENDPOINT_URL", self.remote.storage.endpoint))
         env = ", ".join(f'{{ key: "{k}", value: "{v}" }}' for k, v in env_pairs)
+        # Optional debug hold. RunPod deletes a pod the instant its container's main process exits, so a startup
+        # crash in entrypoint-train.sh is invisible: the pod (and its logs) are gone before anyone can read them.
+        # When PROTEA_DEBUG_HOLD_MINUTES is set at launch, keep a *failed* pod alive (`|| sleep N`) so its crash
+        # log stays readable in the RunPod console. A successful run short-circuits the `||` and exits normally, so
+        # this never delays or bills a good run. The command holds no `$`/`"`, so it survives expandvars and the
+        # GraphQL string unchanged. Leave the env unset for normal runs.
+        docker_args = "entrypoint-train.sh"
+        hold = os.environ.get("PROTEA_DEBUG_HOLD_MINUTES", "").strip()
+        if hold.isdigit() and int(hold) > 0:
+            docker_args = f"entrypoint-train.sh || sleep {int(hold) * 60}"
         mutation = DEPLOY_MUTATION.format(
             cloud_type=rp.cloud_type,
             gpu_count=self.remote.gpu_count,
@@ -73,7 +83,7 @@ class RunPodAdapter(RemoteAdapter):
             image=self.remote.image,
             # The image's entrypoint (bash -lc) runs this; the wrapper builds the trainer command from PROTEA_CONFIG
             # / PROTEA_RUN_ID and handles credentials, sync, the runtime limit and the final push.
-            docker_args="entrypoint-train.sh",
+            docker_args=docker_args,
             volume_mount_path=rp.volume_mount_path,
             env=env,
         )
