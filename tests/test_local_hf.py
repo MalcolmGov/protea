@@ -2,8 +2,31 @@ import json
 
 import pytest
 
-from protea.providers.local_hf import LocalHFProvider, parse_tool_calls, to_chat_messages, to_chat_tools
+from protea.providers.local_hf import (
+    LocalHFProvider,
+    parse_tool_calls,
+    strip_reasoning,
+    to_chat_messages,
+    to_chat_tools,
+)
 from protea.schemas.generation import GenerationRequest, Message, ToolCall, ToolSchema
+
+
+def test_strip_reasoning_drops_think_blocks_so_output_is_bare():
+    # An (often empty) <think></think> prefix must not survive into the content, or a JSON task fails json_parsable.
+    assert strip_reasoning('<think>\n\n</think>\n\n{"ok": true}') == '{"ok": true}'
+    assert json.loads(strip_reasoning('<think>plan the graph</think>{"nodes": []}')) == {"nodes": []}
+    # Untouched when there is no reasoning block.
+    assert strip_reasoning("just an answer") == "just an answer"
+    # An unterminated block (output cut off mid-reasoning) is dropped from the opener onward.
+    assert strip_reasoning("done.<think>still thinking") == "done."
+
+
+def test_parse_tool_calls_strips_reasoning_then_reads_content_and_calls():
+    text = '<think>the user wants a lookup</think>Let me check.\n<tool_call>{"name": "lookup_order", "arguments": {}}</tool_call>'
+    content, calls = parse_tool_calls(text)
+    assert content == "Let me check."  # the reasoning trace is gone
+    assert [c.name for c in calls] == ["lookup_order"]
 
 
 def test_parse_tool_calls_and_content():
