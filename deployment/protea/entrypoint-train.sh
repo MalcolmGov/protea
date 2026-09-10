@@ -6,7 +6,6 @@
 set -euo pipefail
 
 WORKDIR="${PROTEA_WORKDIR:-/workspace/protea}"
-mkdir -p "$WORKDIR/logs"
 
 # Capture the whole run to a file and ship it to storage on ANY exit — crash, clean no-op, or success. RunPod
 # deletes a pod the instant its container exits, taking the console logs with it, so a startup failure is otherwise
@@ -14,7 +13,13 @@ mkdir -p "$WORKDIR/logs"
 # the console so it survives off-box; PYTHONUNBUFFERED (set in the image) keeps the trainer's lines flushing to it.
 # The push runs from an EXIT trap set as early as the credentials allow, so even a failed required-variable check
 # below is still shipped. Read it back with the "Fetch training logs (R2)" workflow.
-LOG="$WORKDIR/logs/entrypoint-${PROTEA_RUN_ID:-unknown}.log"
+#
+# The log dir must be writable by the image's unprivileged `protea` user; /workspace/protea itself is root-owned, so
+# a new dir there would fail (`mkdir: Permission denied`) and kill the run before the trap is even set. Use /tmp,
+# which is always writable. The basename stays "logs" so the push lands at $PROTEA_STORAGE/logs regardless.
+LOGDIR="${PROTEA_LOGDIR:-/tmp/protea/logs}"
+mkdir -p "$LOGDIR"
+LOG="$LOGDIR/entrypoint-${PROTEA_RUN_ID:-unknown}.log"
 exec >"$LOG" 2>&1
 echo "protea-train: entrypoint start (run=${PROTEA_RUN_ID:-unknown}, config=${PROTEA_CONFIG:-unset})"
 
@@ -27,7 +32,7 @@ export AWS_ACCESS_KEY_ID="${_CREDS%%:*}"
 export AWS_SECRET_ACCESS_KEY="${_CREDS#*:}"
 if [ -n "${AWS_ENDPOINT_URL:-}" ]; then export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-auto}"; fi
 
-push_log() { protea-storage push "$WORKDIR/logs" "${PROTEA_STORAGE:-}" >/dev/null 2>&1 || true; }
+push_log() { protea-storage push "$LOGDIR" "${PROTEA_STORAGE:-}" >/dev/null 2>&1 || true; }
 if [ -n "${PROTEA_STORAGE:-}" ] && [ -n "$AWS_ACCESS_KEY_ID" ]; then trap push_log EXIT; fi
 
 : "${HF_TOKEN:?HF_TOKEN must be set}"

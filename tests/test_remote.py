@@ -242,7 +242,11 @@ def test_train_entrypoint_is_wired_and_valid():
     # self-deletes is still diagnosable off-box (the console logs die with the pod).
     assert 'exec >"$LOG" 2>&1' in body
     assert "trap push_log EXIT" in body
-    assert 'protea-storage push "$WORKDIR/logs"' in body
+    assert 'protea-storage push "$LOGDIR"' in body
+    # The log dir must be writable by the image's unprivileged user; /workspace/protea is root-owned, so a new dir
+    # under $WORKDIR would fail and kill the run before the trap is set. Keep it under /tmp.
+    assert "/tmp/protea/logs" in body
+    assert 'mkdir -p "$WORKDIR/logs"' not in body
 
     if shutil.which("bash"):
         subprocess.run(["bash", "-n", str(script)], check=True)
