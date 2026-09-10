@@ -1,8 +1,9 @@
 name: Fetch training logs (R2)
 
-# Reads objects the pod wrote to R2 (by default the entrypoint logs under logs/) and prints them into this
-# workflow's log, so a crashed remote run can be diagnosed even though its pod self-deleted. Free: no GPU, just an
-# S3 read with the R2 secrets already in the repo. Run it after a training launch that died, then read the output.
+# Reads objects the pod wrote to R2 and prints the human-readable ones (logs, manifest, model-card, metrics) into
+# this workflow's log, so a remote run can be inspected even though its pod self-deletes. Free: no GPU, just an S3
+# read with the R2 secrets already in the repo. Binary/large files (adapters, optimizer state) are listed but not
+# dumped, so a run dir with a multi-hundred-MB checkpoint stays readable. Run it, then read the output here.
 on:
   workflow_dispatch:
     inputs:
@@ -14,9 +15,13 @@ on:
         description: R2 S3 endpoint, e.g. https://<account-id>.r2.cloudflarestorage.com
         required: true
       prefix:
-        description: Key prefix to read (the entrypoint writes to logs/)
+        description: Key prefix to read (entrypoint logs live under logs/; a run's metrics live under checkpoints/<run>/)
         required: true
         default: logs/
+      max_kb:
+        description: Only print text files up to this size (KB); larger/binary files are listed but not dumped
+        required: false
+        default: "512"
 
 permissions:
   contents: read
@@ -35,18 +40,37 @@ jobs:
         env:
           BUCKET: ${{ inputs.bucket }}
           PREFIX: ${{ inputs.prefix }}
+          MAX_KB: ${{ inputs.max_kb }}
         run: |
           echo "=== objects under s3://${BUCKET}/${PREFIX} ==="
           aws s3 ls "s3://${BUCKET}/${PREFIX}" --recursive || echo "(nothing listed — the pod may not have pushed anything)"
           echo
           tmp="$(mktemp -d)"
-          aws s3 cp "s3://${BUCKET}/${PREFIX}" "$tmp" --recursive || true
+          # --only-show-errors: no per-file "Completed X MiB" progress spam (it drowns the log for big checkpoints).
+          aws s3 cp "s3://${BUCKET}/${PREFIX}" "$tmp" --recursive --only-show-errors || true
+          max_bytes=$(( ${MAX_KB:-512} * 1024 ))
           found=0
           while IFS= read -r f; do
             found=1
-            echo "===================== BEGIN ${f#$tmp/} ====================="
-            cat "$f"
-            echo "====================== END ${f#$tmp/} ======================"
+            rel="${f#$tmp/}"
+            size=$(stat -c %s "$f" 2>/dev/null || echo 0)
+            case "$rel" in
+              # Only dump human-readable text; everything else (adapters, optimizer/rng/scheduler state, tokenizers)
+              # is listed but not printed — dumping a 600 MB safetensors as text is useless and truncates the log.
+              *.json|*.jsonl|*.md|*.txt|*.log|*.yaml|*.yml|*.csv)
+                if [ "$size" -le "$max_bytes" ]; then
+                  echo "===================== BEGIN ${rel} (${size} bytes) ====================="
+                  cat "$f"
+                  echo
+                  echo "====================== END ${rel} ======================"
+                else
+                  echo "----- SKIPPED ${rel} (${size} bytes > ${MAX_KB}KB text cap) -----"
+                fi
+                ;;
+              *)
+                echo "----- SKIPPED ${rel} (${size} bytes, binary/non-text) -----"
+                ;;
+            esac
             echo
           done < <(find "$tmp" -type f | sort)
           [ "$found" = 0 ] && echo "No files were downloaded from s3://${BUCKET}/${PREFIX} — nothing to show."
