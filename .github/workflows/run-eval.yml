@@ -1,0 +1,155 @@
+name: Run eval (RunPod)
+
+# Score an ALREADY-TRAINED adapter against ZaraBench, judge-free, on a rented GPU — no retraining. The pod runs
+# entrypoint-eval.sh (selected via PROTEA_ENTRYPOINT): it pulls the adapter from R2 (adapter_key), loads base+LoRA
+# in-process with the `local` provider (no API tokens leave the box), scores the suite, and pushes the report +
+# log to R2. Read the result with the "Fetch training logs (R2)" workflow (prefix eval-reports/ or logs/).
+#
+# NOTE ON THE PRINTED PLAN: the launcher (`train remote`) prints a *training* cost/duration estimate for the given
+# config — ignore it. A judge-free eval of a per-category sample is far shorter and cheaper (GPU time only, minutes).
+on:
+  workflow_dispatch:
+    inputs:
+      bucket:
+        description: R2 bucket name (e.g. protea-runs)
+        required: true
+        default: protea-runs
+      endpoint:
+        description: R2 S3 endpoint, e.g. https://<account-id>.r2.cloudflarestorage.com
+        required: true
+      adapter_key:
+        description: R2 key of the adapter dir to score (e.g. checkpoints/<exp>/<run>/adapter)
+        required: true
+      base_model:
+        description: Base model the adapter attaches to
+        required: true
+        default: Qwen/Qwen3-8B
+      per_category:
+        description: Quick read — an even, deterministic sample of N tasks per category (blank = full suite)
+        required: false
+        default: "2"
+      config:
+        description: Training config (used ONLY to satisfy the launcher and estimate; not what runs on the pod)
+        required: true
+        default: configs/training/protea-agent-8b-qlora-0.2.yaml
+      remote:
+        description: GPU target (48GB fits the 8B eval; the launch falls through targets until one has capacity)
+        required: true
+        default: configs/remote/runpod-a6000-community.yaml
+        type: choice
+        options:
+          - configs/remote/runpod-a6000-community.yaml
+          - configs/remote/runpod-l40s-community.yaml
+          - configs/remote/runpod-h100.yaml
+          - configs/remote/runpod-a100.yaml
+          - configs/remote/runpod-a6000.yaml
+          - configs/remote/runpod-l40s.yaml
+      train_key:
+        description: R2 key of the train split (fetched locally so the launcher can hash the config's dataset)
+        required: true
+        default: protea_data/0.2.0/train.blended.jsonl
+      val_key:
+        description: R2 key of the validation split
+        required: true
+        default: protea_data/0.2.0/validation.jsonl
+      confirm:
+        description: dry-run prints the plan only; launch rents the GPU for the eval
+        required: true
+        default: dry-run
+        type: choice
+        options: [dry-run, launch]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: run-eval
+  cancel-in-progress: false
+
+env:
+  AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+  AWS_ENDPOINT_URL: ${{ inputs.endpoint }}
+  AWS_DEFAULT_REGION: auto
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: "pip install --only-binary :all: --require-hashes -r requirements/base.txt"
+
+      - name: Point the RunPod configs at your R2 bucket and endpoint
+        env:
+          BUCKET: ${{ inputs.bucket }}
+          ENDPOINT: ${{ inputs.endpoint }}
+        run: |
+          python - <<'PY'
+          import os, glob, pathlib, yaml
+          for f in glob.glob("configs/remote/runpod*.yaml"):
+              p = pathlib.Path(f)
+              cfg = yaml.safe_load(p.read_text())
+              cfg["storage"]["uri"] = f"s3://{os.environ['BUCKET']}"
+              cfg["storage"]["endpoint"] = os.environ["ENDPOINT"]
+              p.write_text(yaml.safe_dump(cfg, sort_keys=False))
+          PY
+
+      # The launcher hashes the config's training dataset, so fetch it into the paths the config expects. The eval
+      # pod does NOT use it — it pulls the adapter (adapter_key) from R2 — but `train remote` reads it to plan.
+      - name: Fetch the dataset from R2 (so the launcher can hash it)
+        env:
+          BUCKET: ${{ inputs.bucket }}
+          CONFIG: ${{ inputs.config }}
+          TRAIN_KEY: ${{ inputs.train_key }}
+          VAL_KEY: ${{ inputs.val_key }}
+        run: |
+          TRAIN_DST=$(python -c "import yaml; print(yaml.safe_load(open('$CONFIG'))['dataset']['train'])")
+          VAL_DST=$(python -c "import yaml; print(yaml.safe_load(open('$CONFIG'))['dataset']['validation'])")
+          mkdir -p "$(dirname "$TRAIN_DST")" "$(dirname "$VAL_DST")"
+          aws s3 cp "s3://${BUCKET}/${TRAIN_KEY}" "$TRAIN_DST"
+          aws s3 cp "s3://${BUCKET}/${VAL_KEY}"   "$VAL_DST"
+
+      - name: Plan (dry-run — rents nothing)
+        if: ${{ inputs.confirm != 'launch' }}
+        env:
+          CONFIG: ${{ inputs.config }}
+          REMOTE: ${{ inputs.remote }}
+        run: |
+          PYTHONPATH=. python -m protea.cli train remote \
+            --config "$CONFIG" --remote "$REMOTE" --allow-unregistered
+
+      # Launch the eval. PROTEA_ENTRYPOINT makes the pod run entrypoint-eval.sh instead of the trainer; the launcher
+      # forwards the PROTEA_* eval knobs (adapter, base model, sample size) to the pod. Fall through GPU targets
+      # until one has capacity, same as training.
+      - name: Launch eval (tries GPU targets until one has capacity)
+        if: ${{ inputs.confirm == 'launch' }}
+        env:
+          CONFIG: ${{ inputs.config }}
+          REMOTE: ${{ inputs.remote }}
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          PROTEA_STORAGE_CREDENTIALS: ${{ secrets.R2_ACCESS_KEY_ID }}:${{ secrets.R2_SECRET_ACCESS_KEY }}
+          PROTEA_ENTRYPOINT: entrypoint-eval.sh
+          PROTEA_ADAPTER_KEY: ${{ inputs.adapter_key }}
+          PROTEA_BASE_MODEL: ${{ inputs.base_model }}
+          PROTEA_EVAL_PER_CATEGORY: ${{ inputs.per_category }}
+        run: |
+          CANDIDATES=$(printf '%s\n' "$REMOTE" \
+            configs/remote/runpod-a6000-community.yaml \
+            configs/remote/runpod-l40s-community.yaml \
+            configs/remote/runpod-h100.yaml \
+            configs/remote/runpod-a100.yaml | awk 'NF && !seen[$0]++')
+          for R in $CANDIDATES; do
+            echo "=== attempting eval launch on $R ==="
+            if PYTHONPATH=. python -m protea.cli train remote \
+                 --config "$CONFIG" --remote "$R" --allow-unregistered --confirm; then
+              echo "launched on $R"
+              exit 0
+            fi
+            echo "$R has no capacity right now; trying the next target"
+          done
+          echo "all GPU targets are supply-constrained at the moment — re-run shortly"
+          exit 1
