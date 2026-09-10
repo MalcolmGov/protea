@@ -86,7 +86,7 @@ class LocalHFProvider(ModelProvider):
         adapter: str | None = None,
         *,
         served_as: str | None = None,
-        device: str = "cpu",
+        device: str | None = None,
         threads: int | None = None,
         **kw: Any,
     ):
@@ -115,15 +115,22 @@ class LocalHFProvider(ModelProvider):
                 raise ProviderError(self.name, f"transformers/torch not installed: {exc}") from exc
             if self.threads:
                 torch.set_num_threads(self.threads)
+            # Pick the device automatically when not pinned: a GPU box (e.g. the eval pod) uses CUDA, everything
+            # else (CI, laptops) stays on CPU. On GPU load in bf16 — an 8B in fp32 is ~32GB and OOM-kills a modest
+            # pod during load; bf16 halves that to ~16GB and is ~2x faster. low_cpu_mem_usage streams shards to the
+            # device instead of doubling host RAM. CPU keeps fp32 (bf16 CPU kernels are patchy).
+            dev = self.device or ("cuda" if torch.cuda.is_available() else "cpu")
+            dtype = torch.bfloat16 if str(dev).startswith("cuda") else torch.float32
             tok = AutoTokenizer.from_pretrained(self.model_path)
-            model = AutoModelForCausalLM.from_pretrained(self.model_path, dtype=torch.float32)
+            model = AutoModelForCausalLM.from_pretrained(self.model_path, dtype=dtype, low_cpu_mem_usage=True)
             if self.adapter:
                 from peft import PeftModel
 
                 model = PeftModel.from_pretrained(model, self.adapter)
                 model = model.merge_and_unload()
-            model.to(self.device)
+            model.to(dev)
             model.eval()
+            self.device = dev  # resolved device the generation path moves inputs to
             if tok.pad_token_id is None:
                 tok.pad_token = tok.eos_token
             self._tok, self._model = tok, model

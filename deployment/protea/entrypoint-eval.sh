@@ -23,7 +23,14 @@ export AWS_SECRET_ACCESS_KEY="${_CREDS#*:}"
 if [ -n "${AWS_ENDPOINT_URL:-}" ]; then export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-auto}"; fi
 
 push_log() { protea-storage push "$LOGDIR" "${PROTEA_STORAGE:-}" >/dev/null 2>&1 || true; }
-if [ -n "${PROTEA_STORAGE:-}" ] && [ -n "$AWS_ACCESS_KEY_ID" ]; then trap push_log EXIT; fi
+SYNC_PID=""
+if [ -n "${PROTEA_STORAGE:-}" ] && [ -n "$AWS_ACCESS_KEY_ID" ]; then
+  trap push_log EXIT
+  # Also stream the log periodically: an OOM or host reclaim SIGKILLs the container and bypasses the EXIT trap, so
+  # without this a death during model load leaves no trace (exactly what happened the first time). 45s cadence.
+  ( while sleep 45; do protea-storage push "$LOGDIR" "$PROTEA_STORAGE" >/dev/null 2>&1 || true; done ) &
+  SYNC_PID=$!
+fi
 
 : "${PROTEA_STORAGE:?PROTEA_STORAGE (e.g. s3://bucket) must be set}"
 : "${PROTEA_STORAGE_CREDENTIALS:?PROTEA_STORAGE_CREDENTIALS (\"<access_key_id>:<secret_access_key>\") must be set}"
@@ -61,6 +68,7 @@ timeout --signal=TERM --kill-after=120 "$((MAX_MINUTES * 60))" \
     --config "$EVAL_CONFIG" --out "$OUT" --confirm "${EVAL_ARGS[@]}"
 STATUS=$?
 
+[ -n "$SYNC_PID" ] && kill "$SYNC_PID" 2>/dev/null || true
 echo "protea-eval: evaluator exited with status $STATUS"
 # Ship the reports (small JSON + Markdown) to storage under eval-reports/<run_id>/.
 protea-storage push "$OUT" "$PROTEA_STORAGE/eval-reports" || true
