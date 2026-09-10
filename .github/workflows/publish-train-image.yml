@@ -11,6 +11,7 @@ on:
       - deployment/protea/Dockerfile.train
       - deployment/protea/entrypoint-train.sh
       - deployment/protea/entrypoint-eval.sh
+      - deployment/protea/entrypoint-synth.sh
       - requirements/train-gpu.txt
       - .github/workflows/publish-train-image.yml
 

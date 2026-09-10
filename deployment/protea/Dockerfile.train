@@ -24,7 +24,8 @@ COPY configs ./configs
 COPY evaluation ./evaluation
 COPY deployment/protea/entrypoint-train.sh /usr/local/bin/entrypoint-train.sh
 COPY deployment/protea/entrypoint-eval.sh /usr/local/bin/entrypoint-eval.sh
-RUN chmod 755 /usr/local/bin/entrypoint-train.sh /usr/local/bin/entrypoint-eval.sh
+COPY deployment/protea/entrypoint-synth.sh /usr/local/bin/entrypoint-synth.sh
+RUN chmod 755 /usr/local/bin/entrypoint-train.sh /usr/local/bin/entrypoint-eval.sh /usr/local/bin/entrypoint-synth.sh
 USER protea
 # The remote adapter plan invokes `entrypoint-train.sh`, which reads PROTEA_CONFIG / PROTEA_RUN_ID / PROTEA_STORAGE
 # and the credentials from the environment, runs the trainer under a runtime limit, and streams checkpoints to

@@ -224,6 +224,19 @@ def test_runpod_entrypoint_override_and_eval_env_passthrough(catalogue, monkeypa
     assert '{ key: "PROTEA_BASE_MODEL", value: "Qwen/Qwen3-8B" }' in m
     assert '{ key: "PROTEA_EVAL_PER_CATEGORY", value: "2" }' in m
 
+    # Synth launch: the synth entrypoint + its knobs (seeds, teacher, targeting) forward the same way.
+    monkeypatch.setenv("PROTEA_ENTRYPOINT", "entrypoint-synth.sh")
+    monkeypatch.setenv("PROTEA_SEEDS_KEY", "seeds/tool_calling_seeds.jsonl")
+    monkeypatch.setenv("PROTEA_SYNTH_MODEL", "Qwen/Qwen3-8B")
+    monkeypatch.setenv("PROTEA_SYNTH_SCENARIOS", "write-after-confirm write-confirms")
+    monkeypatch.setenv("PROTEA_SYNTH_LIMIT", "340")
+    m = build_adapter(rp).plan(req).artifacts["runpod-deploy.graphql"]
+    assert 'dockerArgs: "entrypoint-synth.sh"' in m
+    assert '{ key: "PROTEA_SEEDS_KEY", value: "seeds/tool_calling_seeds.jsonl" }' in m
+    assert '{ key: "PROTEA_SYNTH_MODEL", value: "Qwen/Qwen3-8B" }' in m
+    assert '{ key: "PROTEA_SYNTH_SCENARIOS", value: "write-after-confirm write-confirms" }' in m
+    assert '{ key: "PROTEA_SYNTH_LIMIT", value: "340" }' in m
+
 
 def test_eval_entrypoint_is_shipped_and_scores_local(catalogue):
     """The image ships the eval wrapper + the ZaraBench suite, and the wrapper scores the adapter with the free
@@ -247,6 +260,28 @@ def test_eval_entrypoint_is_shipped_and_scores_local(catalogue):
     # every task errors, and no report is pushed. Keep all writes under a writable base.
     assert 'ADAPTER_DIR="$WORKDIR/' not in body and 'OUT="$WORKDIR/' not in body
     assert "WORKBASE=" in body
+
+
+def test_synth_entrypoint_is_shipped_and_uses_open_weight_teacher(catalogue):
+    """The image ships the synth wrapper; it completes seeds with the in-process open-weight `local` teacher (no
+    proprietary API), writes scratch under a writable base, and pushes accepted completions to storage."""
+    import shutil
+    import subprocess
+
+    dockerfile = (REPO / "deployment/protea/Dockerfile.train").read_text(encoding="utf-8")
+    assert "COPY deployment/protea/entrypoint-synth.sh /usr/local/bin/entrypoint-synth.sh" in dockerfile
+
+    script = REPO / "deployment/protea/entrypoint-synth.sh"
+    body = script.read_text(encoding="utf-8")
+    assert "protea dataset synthesize" in body
+    assert "--provider local" in body  # open-weight teacher on the pod, not a proprietary API
+    assert "--balance" in body and "--scenario" in body  # targeted, balanced selection is forwarded
+    assert 'protea-storage push "$OUT"' in body  # accepted completions shipped to storage
+    assert 'exec >"$LOG" 2>&1' in body and "trap push_log EXIT" in body  # same off-box log capture
+    assert 'SEEDS="$WORKDIR/' not in body and 'OUT="$WORKDIR/' not in body  # scratch off the root-owned dir
+    assert "WORKBASE=" in body
+    if shutil.which("bash"):
+        subprocess.run(["bash", "-n", str(script)], check=True)
     if shutil.which("bash"):
         subprocess.run(["bash", "-n", str(script)], check=True)
 
