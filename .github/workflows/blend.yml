@@ -96,9 +96,11 @@ jobs:
 
       - name: Summary
         if: always()
+        env:
+          OUT_KEY: ${{ inputs.out_key }}
         run: |
           if [ -f merged.jsonl ]; then
-            echo "merged rows: $(wc -l < merged.jsonl) -> ${{ inputs.out_key }}"
+            echo "merged rows: $(wc -l < merged.jsonl) -> ${OUT_KEY}"
           else
             echo "no output written"
           fi
