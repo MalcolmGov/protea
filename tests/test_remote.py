@@ -260,6 +260,8 @@ def test_eval_entrypoint_is_shipped_and_scores_local(catalogue):
     # every task errors, and no report is pushed. Keep all writes under a writable base.
     assert 'ADAPTER_DIR="$WORKDIR/' not in body and 'OUT="$WORKDIR/' not in body
     assert "WORKBASE=" in body
+    if shutil.which("bash"):
+        subprocess.run(["bash", "-n", str(script)], check=True)
 
 
 def test_synth_entrypoint_is_shipped_and_uses_open_weight_teacher(catalogue):
@@ -280,8 +282,6 @@ def test_synth_entrypoint_is_shipped_and_uses_open_weight_teacher(catalogue):
     assert 'exec >"$LOG" 2>&1' in body and "trap push_log EXIT" in body  # same off-box log capture
     assert 'SEEDS="$WORKDIR/' not in body and 'OUT="$WORKDIR/' not in body  # scratch off the root-owned dir
     assert "WORKBASE=" in body
-    if shutil.which("bash"):
-        subprocess.run(["bash", "-n", str(script)], check=True)
     if shutil.which("bash"):
         subprocess.run(["bash", "-n", str(script)], check=True)
 
