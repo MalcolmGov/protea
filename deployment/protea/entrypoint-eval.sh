@@ -41,11 +41,16 @@ EVAL_CONFIG="${PROTEA_EVAL_CONFIG:-configs/evaluation/zarabench-0.1.yaml}"
 PER_CATEGORY="${PROTEA_EVAL_PER_CATEGORY:-2}"
 MAX_MINUTES="${PROTEA_MAX_RUNTIME_MINUTES:-60}"
 
+# Read configs/tasks from the repo (world-readable), but WRITE only under a writable base: $WORKDIR
+# (/workspace/protea) is root-owned and the image runs as the unprivileged `protea` user, so writing the adapter
+# and report dirs there fails EACCES — the adapter never downloads, every task errors, and no report is pushed.
+# Same class of bug as the training entrypoint's log dir; keep all scratch under /tmp (always writable here).
 cd "$WORKDIR"
+WORKBASE="${PROTEA_EVAL_WORKBASE:-/tmp/protea/eval}"
 
 # Pull the adapter from storage. protea-storage push wrote it at "$PROTEA_STORAGE/$PROTEA_ADAPTER_KEY" (a directory
 # of adapter_config.json + adapter weights); copy it whole into a local dir the local provider loads via PEFT.
-ADAPTER_DIR="$WORKDIR/eval_adapter/adapter"
+ADAPTER_DIR="$WORKBASE/adapter"
 mkdir -p "$ADAPTER_DIR"
 echo "protea-eval: pulling adapter ${PROTEA_STORAGE%/}/${PROTEA_ADAPTER_KEY}"
 aws s3 cp "${PROTEA_STORAGE%/}/${PROTEA_ADAPTER_KEY}" "$ADAPTER_DIR" --recursive --only-show-errors
@@ -53,7 +58,7 @@ export PROTEA_LOCAL_MODEL="$BASE_MODEL"
 export PROTEA_LOCAL_ADAPTER="$ADAPTER_DIR"
 export PROTEA_LOCAL_SERVED_AS="${PROTEA_SERVED_AS:-$PROTEA_ADAPTER_KEY}"
 
-OUT="$WORKDIR/eval_out/${PROTEA_RUN_ID:-run}"
+OUT="$WORKBASE/out/${PROTEA_RUN_ID:-run}"
 mkdir -p "$OUT"
 
 # Optional flags: a blank per_category means the full suite (don't pass an empty --per-category, typer rejects it).
