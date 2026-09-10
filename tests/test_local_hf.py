@@ -64,6 +64,9 @@ async def test_generate_with_a_tiny_random_model(tmp_path):
     model.save_pretrained(tmp_path / "tiny")
     tok.save_pretrained(tmp_path / "tiny")
     provider = LocalHFProvider(str(tmp_path / "tiny"), threads=1, served_as="protea-agent-0.0.1")
+    # Device is auto-selected (None -> resolved at load): CPU here, CUDA on a GPU box like the eval pod. It must
+    # not default to a pinned "cpu", which is what made the GPU eval load the 8B on CPU in fp32 and OOM.
+    assert provider.device is None
     health = await provider.health()
     assert health.ok
     assert provider.model == "protea-agent-0.0.1"
