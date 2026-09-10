@@ -1,0 +1,104 @@
+name: Blend synthetic into train split
+
+# The stage between review and training: merge reviewed synthetic rows into a mined/blended train split and
+# write the new split back to R2, so a training run can point straight at it. Drops rejected rows, scrubs PII on
+# the synthetic rows, dedups (near-duplicate targets), and marks survivors approved. Only the TRAIN split is
+# touched — validation/test/golden stay as they were, so the ZaraBench hold-out is never diluted.
+#
+# Spends NOTHING: CPU runner, an S3 read + write with the R2 secrets already in the repo. No teacher, no GPU.
+# Needs the same R2 secrets as synthesize.yml / review.yml (R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY).
+on:
+  workflow_dispatch:
+    inputs:
+      bucket:
+        description: R2 bucket name (e.g. protea-runs)
+        required: true
+        default: protea-runs
+      endpoint:
+        description: R2 S3 endpoint, e.g. https://<account-id>.r2.cloudflarestorage.com
+        required: true
+      mined_key:
+        description: R2 key of the base train split to blend INTO (the current blend is fine — its rows pass through)
+        required: true
+        default: protea_data/0.2.0/train.blended.jsonl
+      synthetic_keys:
+        description: R2 key(s) of the reviewed synthetic JSONL to blend in — space-separated for several
+        required: true
+        default: reviewed/tool_calling.jsonl
+      out_key:
+        description: R2 key to write the merged train split to (point the training run's train_key at this)
+        required: true
+        default: protea_data/0.2.1/train.blended.jsonl
+      approved_only:
+        description: Take only rows stamped review_status=approved (default keeps all non-rejected rows)
+        required: true
+        default: "no"
+        type: choice
+        options: [ "no", "yes" ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: blend
+  cancel-in-progress: false
+
+env:
+  AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+  AWS_ENDPOINT_URL: ${{ inputs.endpoint }}
+  AWS_DEFAULT_REGION: auto
+
+jobs:
+  blend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: "pip install --only-binary :all: --require-hashes -r requirements/base.txt"
+
+      - name: Fetch the mined split and the reviewed synthetic from R2
+        env:
+          BUCKET: ${{ inputs.bucket }}
+          MINED_KEY: ${{ inputs.mined_key }}
+          SYNTHETIC_KEYS: ${{ inputs.synthetic_keys }}
+        run: |
+          mkdir -p in
+          aws s3 cp "s3://${BUCKET}/${MINED_KEY}" in/mined.jsonl
+          i=0
+          SYNTH_PATHS=""
+          for k in $SYNTHETIC_KEYS; do
+            dst="in/synth_${i}.jsonl"
+            aws s3 cp "s3://${BUCKET}/${k}" "$dst"
+            SYNTH_PATHS="$SYNTH_PATHS $dst"
+            i=$((i + 1))
+          done
+          echo "SYNTH_PATHS=$SYNTH_PATHS" >> "$GITHUB_ENV"
+
+      - name: Blend
+        env:
+          APPROVED_ONLY: ${{ inputs.approved_only }}
+        run: |
+          FLAG=""
+          [ "$APPROVED_ONLY" = "yes" ] && FLAG="--approved-only"
+          PYTHONPATH=. python -m protea.cli dataset blend \
+            in/mined.jsonl $SYNTH_PATHS --out merged.jsonl $FLAG
+
+      - name: Upload merged split to R2
+        env:
+          BUCKET: ${{ inputs.bucket }}
+          OUT_KEY: ${{ inputs.out_key }}
+        run: |
+          aws s3 cp merged.jsonl "s3://${BUCKET}/${OUT_KEY}"
+          echo "merged $(wc -l < merged.jsonl) rows -> s3://${BUCKET}/${OUT_KEY}"
+
+      - name: Summary
+        if: always()
+        run: |
+          if [ -f merged.jsonl ]; then
+            echo "merged rows: $(wc -l < merged.jsonl) -> ${{ inputs.out_key }}"
+          else
+            echo "no output written"
+          fi
