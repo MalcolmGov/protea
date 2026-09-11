@@ -340,23 +340,22 @@ def dataset_synthesize(
     # incrementally means a death at seed 300 keeps 300 completions instead of losing everything, and the
     # progress line every 20 seeds shows how far it got (a consistent stall point points at OOM; a random one
     # at a reclaim). The pod's entrypoint syncs this file to storage periodically, so partial work survives.
-    async def run() -> tuple[int, list[tuple[str, list[str]]]]:
-        accepted = 0
-        failures: list[tuple[str, list[str]]] = []
-        with out.open("w", encoding="utf-8") as fh:
-            for i, s in enumerate(items, 1):
-                r = await synthesize(s, prov, dataset_version="0.1.0-synthetic")
-                if r.ok and r.example is not None:
-                    fh.write(r.example.model_dump_json() + "\n")
-                    fh.flush()
-                    accepted += 1
-                else:
-                    failures.append((r.seed_id, r.problems))
-                if i % 20 == 0 or i == len(items):
-                    typer.echo(f"synth progress: {i}/{len(items)} processed, {accepted} accepted", err=True)
-        return accepted, failures
-
-    accepted, failures = asyncio.run(run())
+    # Synchronous loop (file I/O stays out of any async function): drive each seed's async synthesis with
+    # asyncio.run one at a time — the per-seed loop overhead is nothing next to a multi-second GPU generation,
+    # and the provider keeps the model loaded across calls.
+    accepted = 0
+    failures: list[tuple[str, list[str]]] = []
+    with out.open("w", encoding="utf-8") as fh:
+        for i, s in enumerate(items, 1):
+            r = asyncio.run(synthesize(s, prov, dataset_version="0.1.0-synthetic"))
+            if r.ok and r.example is not None:
+                fh.write(r.example.model_dump_json() + "\n")
+                fh.flush()
+                accepted += 1
+            else:
+                failures.append((r.seed_id, r.problems))
+            if i % 20 == 0 or i == len(items):
+                typer.echo(f"synth progress: {i}/{len(items)} processed, {accepted} accepted", err=True)
     typer.echo(f"seeds {len(items)}  accepted {accepted}  rejected {len(failures)}  -> {out}")
     if skipped_held_out:
         typer.echo(f"skipped {skipped_held_out} seed(s) from families held out by {golden_lock}")
