@@ -1,9 +1,10 @@
 name: Run eval (RunPod)
 
-# Score an ALREADY-TRAINED adapter against ZaraBench, judge-free, on a rented GPU — no retraining. The pod runs
-# entrypoint-eval.sh (selected via PROTEA_ENTRYPOINT): it pulls the adapter from R2 (adapter_key), loads base+LoRA
-# in-process with the `local` provider (no API tokens leave the box), scores the suite, and pushes the report +
-# log to R2. Read the result with the "Fetch training logs (R2)" workflow (prefix eval-reports/ or logs/).
+# Score a model against ZaraBench, judge-free, on a rented GPU — no retraining. The pod runs entrypoint-eval.sh
+# (selected via PROTEA_ENTRYPOINT), loads the model in-process with the `local` provider (no API tokens leave the
+# box), scores the suite, and pushes the report + log to R2. With adapter_key set it scores base+LoRA; leave it
+# BLANK to score the bare pinned base — the B0 baseline. base_revision pins the base to an exact Hub commit so the
+# baseline is reproducible. Read the result with "Fetch training logs (R2)" (prefix eval-reports/ or logs/).
 #
 # NOTE ON THE PRINTED PLAN: the launcher (`train remote`) prints a *training* cost/duration estimate for the given
 # config — ignore it. A judge-free eval of a per-category sample is far shorter and cheaper (GPU time only, minutes).
@@ -18,12 +19,17 @@ on:
         description: R2 S3 endpoint, e.g. https://<account-id>.r2.cloudflarestorage.com
         required: true
       adapter_key:
-        description: R2 key of the adapter dir to score (e.g. checkpoints/<exp>/<run>/adapter)
-        required: true
+        description: R2 key of the adapter dir to score (e.g. checkpoints/<exp>/<run>/adapter). LEAVE BLANK to score the bare base — the B0 baseline.
+        required: false
+        default: ""
       base_model:
-        description: Base model the adapter attaches to
+        description: Base model to load (and that the adapter, if any, attaches to)
         required: true
         default: Qwen/Qwen3-8B
+      base_revision:
+        description: Pinned Hub commit of the base — required for a reproducible baseline (see configs/models/qwen3-8b.yaml)
+        required: true
+        default: b968826d9c46dd6066d109eabc6255188de91218
       per_category:
         description: Quick read — an even, deterministic sample of N tasks per category (blank = full suite)
         required: false
@@ -135,6 +141,7 @@ jobs:
           PROTEA_ENTRYPOINT: entrypoint-eval.sh
           PROTEA_ADAPTER_KEY: ${{ inputs.adapter_key }}
           PROTEA_BASE_MODEL: ${{ inputs.base_model }}
+          PROTEA_BASE_REVISION: ${{ inputs.base_revision }}
           PROTEA_EVAL_PER_CATEGORY: ${{ inputs.per_category }}
         run: |
           CANDIDATES=$(printf '%s\n' "$REMOTE" \

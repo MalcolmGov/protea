@@ -202,6 +202,7 @@ def test_runpod_entrypoint_override_and_eval_env_passthrough(catalogue, monkeypa
         "PROTEA_DEBUG_HOLD_MINUTES",
         "PROTEA_ADAPTER_KEY",
         "PROTEA_BASE_MODEL",
+        "PROTEA_BASE_REVISION",
         "PROTEA_EVAL_PER_CATEGORY",
         "PROTEA_EVAL_CATEGORIES",
         "PROTEA_SERVED_AS",
@@ -217,11 +218,13 @@ def test_runpod_entrypoint_override_and_eval_env_passthrough(catalogue, monkeypa
     monkeypatch.setenv("PROTEA_ENTRYPOINT", "entrypoint-eval.sh")
     monkeypatch.setenv("PROTEA_ADAPTER_KEY", "checkpoints/x/y/adapter")
     monkeypatch.setenv("PROTEA_BASE_MODEL", "Qwen/Qwen3-8B")
+    monkeypatch.setenv("PROTEA_BASE_REVISION", "b968826d9c46dd6066d109eabc6255188de91218")
     monkeypatch.setenv("PROTEA_EVAL_PER_CATEGORY", "2")
     m = build_adapter(rp).plan(req).artifacts["runpod-deploy.graphql"]
     assert 'dockerArgs: "entrypoint-eval.sh"' in m
     assert '{ key: "PROTEA_ADAPTER_KEY", value: "checkpoints/x/y/adapter" }' in m
     assert '{ key: "PROTEA_BASE_MODEL", value: "Qwen/Qwen3-8B" }' in m
+    assert '{ key: "PROTEA_BASE_REVISION", value: "b968826d9c46dd6066d109eabc6255188de91218" }' in m
     assert '{ key: "PROTEA_EVAL_PER_CATEGORY", value: "2" }' in m
 
     # Synth launch: the synth entrypoint + its knobs (seeds, teacher, targeting) forward the same way.
@@ -252,6 +255,10 @@ def test_eval_entrypoint_is_shipped_and_scores_local(catalogue):
     body = script.read_text(encoding="utf-8")
     assert "protea evaluate run --provider local" in body
     assert "PROTEA_LOCAL_ADAPTER" in body  # the local provider reads the adapter path from this env
+    assert "PROTEA_LOCAL_REVISION" in body  # base pinned to an exact commit for a reproducible baseline
+    # The adapter is optional: with a key -> base+LoRA; without -> the bare pinned base (the B0 baseline).
+    assert 'if [ -n "${PROTEA_ADAPTER_KEY:-}" ]' in body
+    assert "B0" in body  # the bare-base branch is labelled as the baseline
     assert "--per-category" in body
     assert 'protea-storage push "$OUT"' in body  # the report is shipped to storage
     assert 'exec >"$LOG" 2>&1' in body and "trap push_log EXIT" in body  # same off-box log capture as training

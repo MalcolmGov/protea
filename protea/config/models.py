@@ -20,6 +20,7 @@ class ModelConfig(BaseModel):
 
     id: str
     hf_repo: str
+    revision: str | None = None  # pinned Hub commit; a baseline scored against a moving tag is not reproducible
     family: str
     license: str
     params_b: float

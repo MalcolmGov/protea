@@ -68,6 +68,7 @@ class RunPodAdapter(RemoteAdapter):
         for name in (
             "PROTEA_ADAPTER_KEY",
             "PROTEA_BASE_MODEL",
+            "PROTEA_BASE_REVISION",
             "PROTEA_EVAL_CONFIG",
             "PROTEA_EVAL_PER_CATEGORY",
             "PROTEA_EVAL_CATEGORIES",

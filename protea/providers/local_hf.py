@@ -103,15 +103,18 @@ class LocalHFProvider(ModelProvider):
         served_as: str | None = None,
         device: str | None = None,
         threads: int | None = None,
+        revision: str | None = None,
         **kw: Any,
     ):
         """`model` is the Hugging Face id or path to load; `served_as` is the name reported on responses and in
-        benchmark reports (the registry key of the adapter, so release checks can find the evidence)."""
+        benchmark reports (the registry key of the adapter, so release checks can find the evidence). `revision`
+        pins the base to an exact Hub commit — a reproducible baseline cannot load from a moving tag."""
         super().__init__(model=served_as or model, **kw)
         self.model_path = model
         self.adapter = adapter
         self.device = device
         self.threads = threads
+        self.revision = revision
         self._tok = None
         self._model = None
         self._lock = threading.Lock()
@@ -136,8 +139,10 @@ class LocalHFProvider(ModelProvider):
             # device instead of doubling host RAM. CPU keeps fp32 (bf16 CPU kernels are patchy).
             dev = self.device or ("cuda" if torch.cuda.is_available() else "cpu")
             dtype = torch.bfloat16 if str(dev).startswith("cuda") else torch.float32
-            tok = AutoTokenizer.from_pretrained(self.model_path)
-            model = AutoModelForCausalLM.from_pretrained(self.model_path, dtype=dtype, low_cpu_mem_usage=True)
+            tok = AutoTokenizer.from_pretrained(self.model_path, revision=self.revision)
+            model = AutoModelForCausalLM.from_pretrained(
+                self.model_path, revision=self.revision, dtype=dtype, low_cpu_mem_usage=True
+            )
             if self.adapter:
                 from peft import PeftModel
 

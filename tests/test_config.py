@@ -4,9 +4,22 @@ import pytest
 import yaml
 
 from protea.config import config_hash, kind_for_dir, load_config
-from protea.config.models import EvaluationConfig, TrainingConfig
+from protea.config.models import EvaluationConfig, ModelConfig, TrainingConfig
 
 REPO = Path(__file__).resolve().parent.parent
+
+
+def test_base_revision_is_pinned_and_consistent():
+    """B0 is only reproducible if the base is pinned to an exact commit, and P0 is only comparable to B0 if it
+    trains on the SAME commit. The catalogue is the source of truth; every training config that uses that base
+    must pin the same revision (or none may drift)."""
+    catalogue = load_config(REPO / "configs/models/qwen3-8b.yaml", "model")
+    assert isinstance(catalogue, ModelConfig)
+    assert catalogue.revision, "the B0 base must pin an exact Hub commit, not a moving tag"
+    for path in (REPO / "configs/training").glob("*.yaml"):
+        cfg = load_config(path, "training")
+        if cfg.model.base_model == catalogue.hf_repo:
+            assert cfg.model.revision == catalogue.revision, f"{path.name}: base revision drifted from the catalogue"
 
 
 @pytest.mark.parametrize("path", sorted((REPO / "configs").rglob("*.yaml")))

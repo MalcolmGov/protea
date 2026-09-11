@@ -1,5 +1,6 @@
 id: qwen3-8b
 hf_repo: Qwen/Qwen3-8B
+revision: b968826d9c46dd6066d109eabc6255188de91218   # pinned commit (main @ 2025-07-26): a B0 baseline scored against a moving tag is not reproducible
 family: qwen3
 license: apache-2.0
 params_b: 8.2

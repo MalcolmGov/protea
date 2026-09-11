@@ -34,9 +34,10 @@ fi
 
 : "${PROTEA_STORAGE:?PROTEA_STORAGE (e.g. s3://bucket) must be set}"
 : "${PROTEA_STORAGE_CREDENTIALS:?PROTEA_STORAGE_CREDENTIALS (\"<access_key_id>:<secret_access_key>\") must be set}"
-: "${PROTEA_ADAPTER_KEY:?PROTEA_ADAPTER_KEY (storage key of the adapter dir to score) must be set}"
 : "${HF_TOKEN:?HF_TOKEN must be set (to download the base model)}"
+# PROTEA_ADAPTER_KEY is OPTIONAL: set -> score base + that adapter; unset -> score the bare base (the B0 baseline).
 BASE_MODEL="${PROTEA_BASE_MODEL:-Qwen/Qwen3-8B}"
+BASE_REVISION="${PROTEA_BASE_REVISION:-}"   # pin the base to an exact Hub commit so the baseline is reproducible
 EVAL_CONFIG="${PROTEA_EVAL_CONFIG:-configs/evaluation/zarabench-0.1.yaml}"
 PER_CATEGORY="${PROTEA_EVAL_PER_CATEGORY:-2}"
 MAX_MINUTES="${PROTEA_MAX_RUNTIME_MINUTES:-60}"
@@ -48,15 +49,22 @@ MAX_MINUTES="${PROTEA_MAX_RUNTIME_MINUTES:-60}"
 cd "$WORKDIR"
 WORKBASE="${PROTEA_EVAL_WORKBASE:-/tmp/protea/eval}"
 
-# Pull the adapter from storage. protea-storage push wrote it at "$PROTEA_STORAGE/$PROTEA_ADAPTER_KEY" (a directory
-# of adapter_config.json + adapter weights); copy it whole into a local dir the local provider loads via PEFT.
-ADAPTER_DIR="$WORKBASE/adapter"
-mkdir -p "$ADAPTER_DIR"
-echo "protea-eval: pulling adapter ${PROTEA_STORAGE%/}/${PROTEA_ADAPTER_KEY}"
-aws s3 cp "${PROTEA_STORAGE%/}/${PROTEA_ADAPTER_KEY}" "$ADAPTER_DIR" --recursive --only-show-errors
 export PROTEA_LOCAL_MODEL="$BASE_MODEL"
-export PROTEA_LOCAL_ADAPTER="$ADAPTER_DIR"
-export PROTEA_LOCAL_SERVED_AS="${PROTEA_SERVED_AS:-$PROTEA_ADAPTER_KEY}"
+export PROTEA_LOCAL_REVISION="$BASE_REVISION"
+# The adapter is optional. With a key: pull it from storage (a dir of adapter_config.json + weights) and load
+# base+LoRA via PEFT. Without one: score the bare pinned base — the B0 baseline the whole delta report compares to.
+if [ -n "${PROTEA_ADAPTER_KEY:-}" ]; then
+  ADAPTER_DIR="$WORKBASE/adapter"
+  mkdir -p "$ADAPTER_DIR"
+  echo "protea-eval: pulling adapter ${PROTEA_STORAGE%/}/${PROTEA_ADAPTER_KEY}"
+  aws s3 cp "${PROTEA_STORAGE%/}/${PROTEA_ADAPTER_KEY}" "$ADAPTER_DIR" --recursive --only-show-errors
+  export PROTEA_LOCAL_ADAPTER="$ADAPTER_DIR"
+  export PROTEA_LOCAL_SERVED_AS="${PROTEA_SERVED_AS:-$PROTEA_ADAPTER_KEY}"
+  SCORING_LABEL="$BASE_MODEL + $PROTEA_ADAPTER_KEY"
+else
+  export PROTEA_LOCAL_SERVED_AS="${PROTEA_SERVED_AS:-${BASE_MODEL}@${BASE_REVISION:-main}}"
+  SCORING_LABEL="$BASE_MODEL @ ${BASE_REVISION:-main} (bare base — B0)"
+fi
 
 OUT="$WORKBASE/out/${PROTEA_RUN_ID:-run}"
 mkdir -p "$OUT"
@@ -66,7 +74,7 @@ EVAL_ARGS=()
 [ -n "$PER_CATEGORY" ] && EVAL_ARGS+=(--per-category "$PER_CATEGORY")
 [ -n "${PROTEA_EVAL_CATEGORIES:-}" ] && EVAL_ARGS+=(--categories "$PROTEA_EVAL_CATEGORIES")
 
-echo "protea-eval: scoring $BASE_MODEL + $PROTEA_ADAPTER_KEY on $EVAL_CONFIG (per_category=${PER_CATEGORY:-full})"
+echo "protea-eval: scoring $SCORING_LABEL on $EVAL_CONFIG (per_category=${PER_CATEGORY:-full})"
 # `local` is a free provider and the suite's judge is null, so this spends no API tokens; --confirm is harmless.
 timeout --signal=TERM --kill-after=120 "$((MAX_MINUTES * 60))" \
   protea evaluate run --provider local --model "$BASE_MODEL" \

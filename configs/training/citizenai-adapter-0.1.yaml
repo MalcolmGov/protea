@@ -8,6 +8,7 @@
 # promotion run. The seed is small (en-ZA v0) and grows as verified languages and volume land.
 model:
   base_model: Qwen/Qwen3-8B
+  revision: b968826d9c46dd6066d109eabc6255188de91218   # same pinned commit as the B0 baseline (configs/models/qwen3-8b.yaml)
   trust_remote_code: false
   load_in_4bit: true
 training:

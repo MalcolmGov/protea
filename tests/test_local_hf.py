@@ -107,3 +107,21 @@ async def test_generate_with_a_tiny_random_model(tmp_path):
     )
     assert resp.usage.output_tokens <= 4
     assert json.dumps(schema) not in (resp.content or "")  # the instruction is in the prompt, not echoed by contract
+
+
+def test_revision_is_stored_and_defaults_to_none():
+    """A pinned commit is carried onto the provider so the base loads reproducibly; unset stays None (moving tag)."""
+    assert LocalHFProvider("Qwen/Qwen3-8B", revision="b968826").revision == "b968826"
+    assert LocalHFProvider("Qwen/Qwen3-8B").revision is None
+
+
+def test_build_local_threads_revision_from_settings_and_override(monkeypatch):
+    """build_provider forwards the PROTEA_LOCAL_REVISION setting to the provider, and an explicit override wins."""
+    from protea.config.settings import ProteaSettings
+    from protea.providers import build_provider
+
+    monkeypatch.setenv("PROTEA_LOCAL_REVISION", "from-settings")
+    s = ProteaSettings()
+    assert s.local_revision == "from-settings"
+    assert build_provider("local", model="Qwen/Qwen3-8B", settings=s).revision == "from-settings"
+    assert build_provider("local", model="Qwen/Qwen3-8B", settings=s, revision="explicit").revision == "explicit"
