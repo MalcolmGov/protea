@@ -161,6 +161,7 @@ class LocalHFProvider(ModelProvider):
             to_chat_messages(req), tools=to_chat_tools(req), add_generation_prompt=True, tokenize=False
         )
         inputs = tok(prompt, return_tensors="pt").to(self.device)
+        input_len = int(inputs["input_ids"].shape[1])
         max_new = max(1, min(int(req.max_tokens), MAX_NEW_TOKENS_CAP))
         started = time.perf_counter()
         with torch.no_grad():
@@ -171,19 +172,27 @@ class LocalHFProvider(ModelProvider):
                 temperature=req.temperature if req.temperature > 0 else None,
                 pad_token_id=tok.pad_token_id,
             )
-        new_tokens = out[0][inputs["input_ids"].shape[1] :]
+        new_tokens = out[0][input_len:]
+        out_len = int(new_tokens.shape[0])
         text = tok.decode(new_tokens, skip_special_tokens=True)
+        # Free the per-generation CUDA allocations before the next call. Over hundreds of sequential
+        # generations (e.g. a synthesis batch of 340 seeds) the reserved cache fragments and can OOM the box;
+        # releasing it between calls keeps the footprint flat. Counts are captured as ints above, so nothing
+        # below reads the freed tensors. No-op on CPU.
+        if str(self.device).startswith("cuda"):
+            del out, inputs, new_tokens
+            torch.cuda.empty_cache()
         content, calls = parse_tool_calls(text)
         finish = "stop"
         if calls:
             finish = "tool_calls"
-        elif len(new_tokens) >= max_new:
+        elif out_len >= max_new:
             finish = "length"
         return GenerationResponse(
             content=content or None,
             tool_calls=calls,
             finish_reason=finish,  # type: ignore[arg-type]
-            usage=Usage(input_tokens=int(inputs["input_ids"].shape[1]), output_tokens=int(len(new_tokens))),
+            usage=Usage(input_tokens=input_len, output_tokens=out_len),
             provider=self.name,
             model=self.model,
             latency_ms=int((time.perf_counter() - started) * 1000),
