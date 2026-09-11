@@ -173,6 +173,12 @@ class LocalHFProvider(ModelProvider):
             )
         new_tokens = out[0][inputs["input_ids"].shape[1] :]
         text = tok.decode(new_tokens, skip_special_tokens=True)
+        # Free the per-generation CUDA allocations before the next call. Over hundreds of sequential
+        # generations (e.g. a synthesis batch of 340 seeds) the reserved cache fragments and can OOM the box;
+        # releasing it between calls keeps the footprint flat. No-op on CPU.
+        if str(self.device).startswith("cuda"):
+            del out, inputs
+            torch.cuda.empty_cache()
         content, calls = parse_tool_calls(text)
         finish = "stop"
         if calls:

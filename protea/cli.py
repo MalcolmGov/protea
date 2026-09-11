@@ -335,19 +335,33 @@ def dataset_synthesize(
         _fail(str(exc))
         return
 
-    async def run() -> list:
-        return [await synthesize(s, prov, dataset_version="0.1.0-synthetic") for s in items]
+    # Process seeds one at a time, WRITING each accepted completion to disk immediately and flushing. An
+    # unattended GPU run can be SIGKILLed (OOM or a community-GPU host reclaim) with no traceback; writing
+    # incrementally means a death at seed 300 keeps 300 completions instead of losing everything, and the
+    # progress line every 20 seeds shows how far it got (a consistent stall point points at OOM; a random one
+    # at a reclaim). The pod's entrypoint syncs this file to storage periodically, so partial work survives.
+    async def run() -> tuple[int, list[tuple[str, list[str]]]]:
+        accepted = 0
+        failures: list[tuple[str, list[str]]] = []
+        with out.open("w", encoding="utf-8") as fh:
+            for i, s in enumerate(items, 1):
+                r = await synthesize(s, prov, dataset_version="0.1.0-synthetic")
+                if r.ok and r.example is not None:
+                    fh.write(r.example.model_dump_json() + "\n")
+                    fh.flush()
+                    accepted += 1
+                else:
+                    failures.append((r.seed_id, r.problems))
+                if i % 20 == 0 or i == len(items):
+                    typer.echo(f"synth progress: {i}/{len(items)} processed, {accepted} accepted", err=True)
+        return accepted, failures
 
-    results = asyncio.run(run())
-    ok = [r for r in results if r.ok]
-    with out.open("w", encoding="utf-8") as fh:
-        for r in ok:
-            fh.write(r.example.model_dump_json() + "\n")  # type: ignore[union-attr]
-    typer.echo(f"seeds {len(items)}  accepted {len(ok)}  rejected {len(results) - len(ok)}  -> {out}")
+    accepted, failures = asyncio.run(run())
+    typer.echo(f"seeds {len(items)}  accepted {accepted}  rejected {len(failures)}  -> {out}")
     if skipped_held_out:
         typer.echo(f"skipped {skipped_held_out} seed(s) from families held out by {golden_lock}")
-    for r in [r for r in results if not r.ok][:10]:
-        typer.secho(f"  {r.seed_id}: {'; '.join(r.problems)}", fg=typer.colors.YELLOW)
+    for seed_id, problems in failures[:10]:
+        typer.secho(f"  {seed_id}: {'; '.join(problems)}", fg=typer.colors.YELLOW)
 
 
 def _held_out_families(lock: Path) -> frozenset[str]:

@@ -278,8 +278,9 @@ def test_synth_entrypoint_is_shipped_and_uses_open_weight_teacher(catalogue):
     assert "protea dataset synthesize" in body
     assert "--provider local" in body  # open-weight teacher on the pod, not a proprietary API
     assert "--balance" in body and "--scenario" in body  # targeted, balanced selection is forwarded
-    assert 'protea-storage push "$OUT"' in body  # accepted completions shipped to storage
-    assert 'exec >"$LOG" 2>&1' in body and "trap push_log EXIT" in body  # same off-box log capture
+    assert 'aws s3 cp "$OUT" "$DEST"' in body  # a single file is cp'd, NOT `protea-storage push` (sync is dir-only)
+    assert "trap push_state EXIT" in body and "while sleep 45" in body  # partial output + log streamed so a
+    assert 'exec >"$LOG" 2>&1' in body  # SIGKILL mid-run doesn't lose completed seeds
     assert 'SEEDS="$WORKDIR/' not in body and 'OUT="$WORKDIR/' not in body  # scratch off the root-owned dir
     assert "WORKBASE=" in body
     if shutil.which("bash"):
