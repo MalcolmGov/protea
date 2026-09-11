@@ -1,6 +1,7 @@
 # First real experiment (spec §64–§65, roadmap §4). Runs only on a rented GPU after an explicit --dry-run review.
 model:
   base_model: Qwen/Qwen3-8B
+  revision: b968826d9c46dd6066d109eabc6255188de91218   # same pinned commit as the B0 baseline (configs/models/qwen3-8b.yaml)
   trust_remote_code: false
   load_in_4bit: true
 training:
