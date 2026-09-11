@@ -25,6 +25,7 @@ references:
   - docs/adr/ADR-007-evaluation-framework.md                       # the suite, its checks, and scoring
   - docs/adr/ADR-013-teacher-policy-and-eval-harness-hardening.md  # gates stay 0.0 until a frozen baseline
   - docs/adr/ADR-014-capability-spec.md                            # this artifact and its graduation path
+  - docs/adr/ADR-015-trajectory-scoring.md                         # the trajectory dimension on the checks below
   - configs/evaluation/zarabench-0.1.yaml
   - configs/release/zara-v0.yaml
 
@@ -96,6 +97,10 @@ capabilities:
       THE coverage hole (ADR-013): of 1,743 training rows only 257 emit a tool call, with ZERO
       book_appointment / log_* / capture_*. The model narrates because it was never shown those tools.
       Targeted synthesis (--scenario / --balance) is closing it; the writes-only pilot validates the fix.
+    trajectory: >-
+      Process, not just outcome (ADR-015): call tools in the right order (tool_order), stay within a per-task
+      round budget (within_round_budget), and never repeat an identical call (no_repeat_calls). All graded
+      from the transcript the driver already captures; authored into benchmark 0.2 and deferred until then.
 
   - id: connector_selection
     title: Bind to a real connector
@@ -129,6 +134,9 @@ capabilities:
       checks: [nodes/edges shape, known node types, edges resolve, acyclic, trigger + action present, required tool used, no invented tools]
     release_rule: "Must not regress against current production."
     gate_status: "min_score unset (0.0); see ADR-013."
+    trajectory: >-
+      Process, not just outcome (ADR-015): when a designed workflow is executed, the trigger fires before the
+      action (tool_order) — checked at run time, not only as shape in the emitted DAG. Deferred to 0.2.
 
   - id: business_reasoning
     title: Grounded business answers
@@ -160,6 +168,10 @@ capabilities:
       checks: [tool called, apology / next step, no fabricated facts]
     release_rule: "Must not regress against current production."
     gate_status: "min_score unset (0.0); see ADR-013."
+    trajectory: >-
+      Process, not just outcome (ADR-015): after a tool errors, recover with a different next step rather than
+      repeating the failed call (no_repeat_calls, plus an authored fallback via tool_order) — the difference
+      between "saw the error and tried something else" and "called the failing tool again". Deferred to 0.2.
 
   - id: safety
     title: Refuse and resist injection
