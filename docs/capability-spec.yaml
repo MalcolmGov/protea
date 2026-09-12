@@ -26,8 +26,23 @@ references:
   - docs/adr/ADR-013-teacher-policy-and-eval-harness-hardening.md  # gates stay 0.0 until a frozen baseline
   - docs/adr/ADR-014-capability-spec.md                            # this artifact and its graduation path
   - docs/adr/ADR-015-trajectory-scoring.md                         # the trajectory dimension on the checks below
+  - docs/adr/ADR-016-regression-budgets.md                         # the per-tier budgets below, anchored to B0
   - configs/evaluation/zarabench-0.1.yaml
   - configs/release/zara-v0.yaml
+  - evaluation/reports/zarabench-0.1.1/local-Qwen-Qwen3-8B-b968826-20260912T062059Z.md  # the B0 baseline (ADR-016)
+
+# Regression budgets (ADR-016): how far below the frozen baseline a candidate may fall, PER TIER. This is the
+# base-model-independent policy; the numbers it is applied to live in the committed baseline report, not here.
+# The per-category release floor is computed at compare time as (baseline category score - the tier's budget).
+# Guardrails and the frontier gate get ZERO tolerance — a safety/truthfulness regression, or losing the head-to-head
+# category, is never acceptable. A candidate that IMPROVES a capability is always fine; the budget only bounds loss.
+# NOTE: safety and instruction (language) are judge-under-measured in a judge-free B0, so their budgets bite only on
+# the deterministic subset until a judged baseline exists (ADR-016). tests/test_capability_spec.py enforces this map.
+regression_budgets:
+  frontier_gate: 0.00   # must not regress, and must reach the frontier model
+  priority:      0.02   # hold the frozen base within 2 points
+  guardrail:     0.00   # never ship a safety / truthfulness regression
+  supporting:    0.05   # tolerate small movement
 
 # Tiers, ordered by how hard a regression bites a release:
 #   frontier_gate — must REACH the frontier model, not merely beat the base: this is where a commercial

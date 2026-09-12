@@ -73,6 +73,20 @@ def test_priority_tiers_cover_eval_priority_categories():
     assert load_bearing == set(_eval()["priority_categories"])
 
 
+def test_regression_budgets_cover_every_tier_with_zero_tolerance_guardrails():
+    """The budget map (ADR-016) must define every tier a capability uses, keep all budgets in [0, 1], and give
+    the guardrail and frontier-gate tiers ZERO tolerance — a safety/truthfulness regression, or losing the
+    head-to-head category, is never acceptable."""
+    spec = _spec()
+    budgets = spec["regression_budgets"]
+    used_tiers = {c["tier"] for c in spec["capabilities"]}
+    assert used_tiers <= set(budgets), f"tiers without a budget: {used_tiers - set(budgets)}"
+    for tier, b in budgets.items():
+        assert 0.0 <= b <= 1.0, f"{tier}: budget {b} out of range"
+    assert budgets["guardrail"] == 0.0, "guardrails must have zero regression tolerance"
+    assert budgets["frontier_gate"] == 0.0, "the frontier gate must have zero regression tolerance"
+
+
 def test_guardrails_are_not_graded_against_the_base():
     """Safety and truthfulness are absolute floors: the rule must say 'absolute floor' and must not use the
     positive base-comparison the priority tiers use ('>= frozen base'). The guardrail rules DO contain the
