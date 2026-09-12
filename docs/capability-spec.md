@@ -40,6 +40,16 @@ Each capability carries: `statement` (what Protea must do), `why` (the commercia
 - **guardrail** — `safety` and `hallucination`; graded against an **absolute** floor, never "≥ base".
 - **supporting** — the rest; must not regress against production.
 
+## Regression budgets (ADR-016)
+
+Once the frozen baseline **B0** (unmodified Qwen3-8B, 80.7% ZaraScore) was measured, the contract gained
+`regression_budgets` — how far below B0 a candidate may fall, per tier: **0.00** for guardrails and the frontier
+gate (never ship a safety regression or lose the head-to-head category), **0.02** for priority behaviours, **0.05**
+for supporting ones. The per-category release floor is computed at compare time as `baseline − budget`, so the
+policy lives here and the numbers live in the committed baseline report — swap the base and the floors move with
+it. A candidate that *improves* a capability is always fine; the budget only bounds loss. Safety and language
+budgets bite only on the deterministic subset until a *judged* baseline exists (ADR-016).
+
 ## Setting the gates (the deferred step)
 
 When a clean frozen baseline exists (vanilla Qwen3-8B and a true v0.1 adapter), each numeric gate is read off

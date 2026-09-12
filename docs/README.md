@@ -20,7 +20,7 @@ Protea is Moove Digital's proprietary model platform. It began as "ZaraLM" in th
 | `operations.md` | Runbooks: daily checks, promote, roll back, rotate credentials, backups, incidents |
 | `zarabench.md` | Running, extending and baselining the ZaraBench suite; release gate and kill criterion |
 | `capability-spec.md` | The behavioural contract (`capability-spec.yaml`): what Protea must do, base-model-independent, and how it drives the release gates (ADR-014) |
-| `adr/` | Architecture decision records (001 repository split, 002 provider abstraction, 003 dataset format, 004 registries, 005 configuration, 006 data pipeline, 007 evaluation framework, 008 training, 009 inference, 010 router, 011 production hardening, 012 CitizenAI government domain, 013 teacher policy & harness hardening, 014 capability spec, 015 trajectory scoring) |
+| `adr/` | Architecture decision records (001 repository split, 002 provider abstraction, 003 dataset format, 004 registries, 005 configuration, 006 data pipeline, 007 evaluation framework, 008 training, 009 inference, 010 router, 011 production hardening, 012 CitizenAI government domain, 013 teacher policy & harness hardening, 014 capability spec, 015 trajectory scoring, 016 regression budgets) |
 
 See also `docs/citizenbench.md` — the CitizenAI government-services evaluation slice (ADR-012).
 See also `docs/citizenai/build-spec.md` — the SA CitizenAI v0 build specification (Pillar 11, ADR-012).
