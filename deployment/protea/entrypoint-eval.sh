@@ -40,6 +40,10 @@ BASE_MODEL="${PROTEA_BASE_MODEL:-Qwen/Qwen3-8B}"
 BASE_REVISION="${PROTEA_BASE_REVISION:-}"   # pin the base to an exact Hub commit so the baseline is reproducible
 EVAL_CONFIG="${PROTEA_EVAL_CONFIG:-configs/evaluation/zarabench-0.1.yaml}"
 PER_CATEGORY="${PROTEA_EVAL_PER_CATEGORY:-2}"
+# "full"/"all"/"0" runs the WHOLE suite. A blank cannot reach here to mean that: the launcher drops empty
+# PROTEA_* vars, and the :-2 default above would re-fill 2 — so a non-empty sentinel is the only way to ask for
+# the full suite through the workflow (this is what made both B0 runs a 20-task sample).
+case "$PER_CATEGORY" in full|all|0|"") PER_CATEGORY="" ;; esac
 MAX_MINUTES="${PROTEA_MAX_RUNTIME_MINUTES:-60}"
 
 # Read configs/tasks from the repo (world-readable), but WRITE only under a writable base: $WORKDIR
@@ -69,7 +73,8 @@ fi
 OUT="$WORKBASE/out/${PROTEA_RUN_ID:-run}"
 mkdir -p "$OUT"
 
-# Optional flags: a blank per_category means the full suite (don't pass an empty --per-category, typer rejects it).
+# Optional flags: an empty PER_CATEGORY (from the "full"/"all"/"0" sentinel above) means the full suite — omit
+# the flag entirely (typer rejects an empty --per-category value).
 EVAL_ARGS=()
 [ -n "$PER_CATEGORY" ] && EVAL_ARGS+=(--per-category "$PER_CATEGORY")
 [ -n "${PROTEA_EVAL_CATEGORIES:-}" ] && EVAL_ARGS+=(--categories "$PROTEA_EVAL_CATEGORIES")

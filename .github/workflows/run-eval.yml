@@ -31,9 +31,11 @@ on:
         required: true
         default: b968826d9c46dd6066d109eabc6255188de91218
       per_category:
-        description: Quick read — an even, deterministic sample of N tasks per category (blank = full suite)
-        required: false
+        description: Tasks per category (a quick deterministic sample), or 'full' for the whole 206-task suite — the real baseline. Blank does NOT mean full; pick 'full'.
+        required: true
         default: "2"
+        type: choice
+        options: ["2", "5", "10", "full"]
       config:
         description: Training config (used ONLY to satisfy the launcher and estimate; not what runs on the pod)
         required: true

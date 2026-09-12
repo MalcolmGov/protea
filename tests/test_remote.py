@@ -256,6 +256,9 @@ def test_eval_entrypoint_is_shipped_and_scores_local(catalogue):
     assert "protea evaluate run --provider local" in body
     assert "PROTEA_LOCAL_ADAPTER" in body  # the local provider reads the adapter path from this env
     assert "PROTEA_LOCAL_REVISION" in body  # base pinned to an exact commit for a reproducible baseline
+    # The full suite must be reachable: an empty per_category is dropped by the launcher and re-filled to 2 by the
+    # entrypoint's :-2 default, so a non-empty sentinel ("full"/"all"/"0") is the only way to ask for all tasks.
+    assert "full|all|0" in body
     # The adapter is optional: with a key -> base+LoRA; without -> the bare pinned base (the B0 baseline).
     assert 'if [ -n "${PROTEA_ADAPTER_KEY:-}" ]' in body
     assert "B0" in body  # the bare-base branch is labelled as the baseline
