@@ -16,6 +16,8 @@ Never trains; only assembles the file a training run points at. Mined rows pass 
 
 from __future__ import annotations
 
+import hashlib
+
 from pydantic import BaseModel, Field
 
 from protea.data_pipeline.dedup import mark_duplicates
@@ -28,6 +30,7 @@ class BlendReport(BaseModel):
     synthetic_in: int = 0
     dropped_rejected: int = 0
     dropped_unapproved: int = 0
+    dropped_capped: int = 0
     pii_scrubbed_rows: int = 0
     pii_redactions: dict[str, int] = Field(default_factory=dict)
     dropped_duplicate: int = 0
@@ -37,6 +40,30 @@ class BlendReport(BaseModel):
     @property
     def ok(self) -> bool:
         return self.merged_total == self.mined_rows + self.synthetic_kept
+
+
+def _apply_cap(
+    rows: list[TrainingExample], cap: dict[str, int]
+) -> tuple[list[TrainingExample], int]:
+    """Deterministically down-sample synthetic rows to at most ``cap[task_type]`` per task type.
+
+    Order is by a stable hash of the row id (not file order or family), so the kept subset is reproducible
+    and not biased toward whichever families sort first. A task type absent from ``cap`` is left untouched.
+    Returns the kept rows (original order preserved) and the number dropped.
+    """
+    keep_ids: set[str] = set()
+    by_task: dict[str, list[TrainingExample]] = {}
+    for ex in rows:
+        by_task.setdefault(str(ex.metadata.task_type), []).append(ex)
+    for task, group in by_task.items():
+        limit = cap.get(task)
+        if limit is None or len(group) <= limit:
+            keep_ids.update(id(ex) for ex in group)
+            continue
+        ordered = sorted(group, key=lambda e: hashlib.sha256(str(e.metadata.id).encode()).hexdigest())
+        keep_ids.update(id(ex) for ex in ordered[:limit])
+    kept = [ex for ex in rows if id(ex) in keep_ids]
+    return kept, len(rows) - len(kept)
 
 
 def _scrub_row(ex: TrainingExample, mode: str) -> dict[str, int]:
@@ -61,9 +88,16 @@ def blend(
     keep_flagged: bool = True,
     pii_mode: str = "synthetic",
     dedup_threshold: float = 0.92,
+    synthetic_cap: dict[str, int] | None = None,
 ) -> tuple[list[TrainingExample], BlendReport]:
     """Merge reviewed synthetic rows into a mined split. ``keep_flagged`` keeps rows whose review left them
-    pending (flagged/clean-but-unapproved); set False to take only rows already stamped ``approved``."""
+    pending (flagged/clean-but-unapproved); set False to take only rows already stamped ``approved``.
+
+    ``synthetic_cap`` optionally limits how many synthetic rows of a given task type survive (e.g.
+    ``{"tool_calling": 250}``), deterministically down-sampling the rest. Use it to keep one synthesized
+    family from swamping the blend — the imbalance behind protea-agent-0.2's regression (see ADR / lineage).
+    Mined rows are never capped.
+    """
     report = BlendReport(mined_rows=len(mined), synthetic_in=len(synthetic))
 
     kept: list[TrainingExample] = []
@@ -82,6 +116,9 @@ def blend(
                 report.pii_redactions[k] = report.pii_redactions.get(k, 0) + n
         ex.metadata.review_status = ReviewStatus.APPROVED  # blended rows are, by construction, signed off
         kept.append(ex)
+
+    if synthetic_cap:
+        kept, report.dropped_capped = _apply_cap(kept, synthetic_cap)
 
     # Dedup the whole set together: mined rows first so a synthetic near-duplicate of a mined row loses, and
     # synthetic-vs-synthetic dups collapse. mark_duplicates is family/task-type aware.

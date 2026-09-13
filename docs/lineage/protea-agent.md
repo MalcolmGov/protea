@@ -48,27 +48,55 @@ Five budget breaches, including the zero-tolerance frontier gate. The "Protea B0
 criterion — *credible improvement over the base without violating ADR-014 regression thresholds* — is
 **not met** by P0.
 
-### What the evidence says
+### What the evidence says — it's the blend composition, not "caution"
 
-P0 traded **action for caution**. The guardrail tier improved sharply — hallucination +38.9 (B0's worst
-category, 34% → 73%, more than doubled) and safety +11.2 — but every capability that requires the model to
-*act* regressed. The mechanism is visible in the failure modes: P0's `tool_called` failures rose to 44
-(B0: 20), a new `no_hallucinated_connectors` check fails 12×, and `failure_recovery` pass-rate collapsed
-66.7% → 0.0% (the model stopped emitting the `handoff_to_human` binding). P0 also emits roughly half the
-output tokens (103K vs 218K). The conservative 0.2 blend **over-suppressed tool-calling assertiveness**:
-it generalized "don't hallucinate / be safe" into "don't call tools," which is fatal for an agent.
+The root cause is in the training mix, not the model's temperament. The 0.2 blend (1743 train rows) was:
+
+| task_type | rows | share | source |
+|---|---|---|---|
+| **tool_calling** | **724** | **42%** | 100% synthetic (one reviewed family) |
+| structured_output | 407 | 23% | mined |
+| agent_generation | 388 | 22% | mined |
+| connector_selection | 142 | 8% | mined |
+| routing | 82 | 5% | mined |
+| **failure_recovery** | **0** | **0%** | — |
+
+One synthesized family (tool_calling) at **42%** swamped the mined categories, and three epochs on that narrow,
+terse distribution (its assistant turns are bare tool-calls) drove **catastrophic forgetting** of abilities the
+base had at B0. That is why **connector_selection collapsed −19.2** (only 8% of the mix, swamped) and
+**failure_recovery collapsed −55.5** (0% coverage — the model forgot a skill it scored 72% on). The failure
+modes corroborate: `tool_called` failures rose to 44 (B0: 20), a new `no_hallucinated_connectors` check fails
+12×, `failure_recovery` pass-rate went 66.7% → 0.0%, and P0 emits roughly half the output tokens (103K vs 218K).
+Crucially, the heavy tool_calling volume **did not even lift tool_calling** (−4.4, within noise) — so the
+experiment's stated hypothesis, *"does tool_calling volume raise the score?"*, is cleanly **falsified**.
+
+The guardrail *gains* are real and traceable: the synthetic tool_calling system prompts carry strong
+*"never invent … use tools only when justified"* framing, which transferred — lifting hallucination +38.9 (B0's
+worst category, 34% → 73%, more than doubled) and safety +11.2. That framing is worth keeping.
+
+> Note: an earlier revision of this doc described P0 as an over-*conservative* blend that "suppressed
+> tool-calling." Tracing the actual composition (42% synthetic tool_calling) falsified that — the blend was
+> tool-calling-*heavy*; the regressions come from imbalance and forgetting, not caution. Corrected here.
 
 ### Signal vs. noise
 
 - **Load-bearing (large vs n):** hallucination +38.9, failure_recovery −55.5, connector_selection −19.2,
   safety +11.2, workflow_generation +7.5.
-- **Within the ~1-task noise band (n = 25–32):** agent_generation −1.7, structured_output −2.6. The
-  frontier-gate breach is one task's worth on n = 32 — it trips the letter of the zero-tolerance rule but
-  is not a credible capability loss. The real regressions to fix are **tool_calling, connector_selection,
+- **Within the ~1-task noise band (n = 25–32):** agent_generation −1.7, structured_output −2.6, tool_calling
+  −4.4. The frontier-gate breach is one task's worth on n = 32 — it trips the letter of the zero-tolerance
+  rule but is not a credible capability loss. The load-bearing regressions to fix are **connector_selection
   and failure_recovery**.
 
-### Next rung (P0.1) — failure-driven, not architectural
+### Next rung (P0.1) — rebalance the blend, one variable
 
-Fix the data, not the model. Rebalance the 0.2 blend to protect tool-calling / connector-selection /
-failure-recovery trajectories (up-weight examples where the correct behavior is to *call a tool* or *hand
-off*), while preserving the hallucination/safety gains P0 earned. No architecture change.
+Fix the data, not the model. **Down**-sample the swamping synthetic tool_calling **724 → 250** (~20% of the
+mix, peer-sized with the mined categories) so it no longer crowds out the rest and no longer over-trains — while
+keeping enough of it to retain the anti-hallucination framing P0 earned. Every hyperparameter stays identical to
+P0 (epochs 3 included), so P0.1's delta is attributable to the rebalanced blend alone.
+
+- Config: `configs/training/protea-agent-8b-qlora-0.2.1.yaml`
+- Produce the split: blend workflow with `cap: "tool_calling=250"`, or `dataset blend … --cap tool_calling=250`.
+- **Hypothesis:** with the over-fit removed, the base's latent connector_selection and failure_recovery survive,
+  while the safety/hallucination gains persist.
+- **Known gap:** failure_recovery still has *zero* training coverage; the rebalance is expected to recover much
+  of the −55.5 by not destroying the base skill, but explicit coverage would need a synthesis run (a later rung).
