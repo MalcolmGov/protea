@@ -1,0 +1,80 @@
+name: Rebalance a train split (cap a task type)
+
+# Deterministically down-samples one task type in an existing train split already in R2, without re-blending —
+# the way protea-agent-0.2.1 is produced (cap synthetic tool_calling 724 -> 250 in the 0.2.0 blend, which cured
+# the 42%-tool_calling imbalance behind P0's regression; see docs/lineage/protea-agent.md). Use this when the
+# separate mined/synthetic inputs aren't at hand but the assembled blend is.
+#
+# Spends NOTHING: CPU runner, an S3 read + write with the R2 secrets already in the repo. No teacher, no GPU.
+on:
+  workflow_dispatch:
+    inputs:
+      bucket:
+        description: R2 bucket name (e.g. protea-runs)
+        required: true
+        default: protea-runs
+      endpoint:
+        description: R2 S3 endpoint, e.g. https://<account-id>.r2.cloudflarestorage.com
+        required: true
+      in_key:
+        description: R2 key of the split to rebalance (the assembled blend to cap)
+        required: true
+        default: protea_data/0.2.0/train.blended.jsonl
+      out_key:
+        description: R2 key to write the capped split to (point the training run's train_key at this)
+        required: true
+        default: protea_data/0.2.1/train.blended.jsonl
+      cap:
+        description: Per-task-type cap(s), e.g. "tool_calling=250" (space-separated for several).
+        required: true
+        default: tool_calling=250
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rebalance
+  cancel-in-progress: false
+
+env:
+  AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+  AWS_ENDPOINT_URL: ${{ inputs.endpoint }}
+  AWS_DEFAULT_REGION: auto
+
+jobs:
+  rebalance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: "pip install --only-binary :all: --require-hashes -r requirements/base.txt"
+
+      - name: Fetch the split from R2
+        env:
+          BUCKET: ${{ inputs.bucket }}
+          IN_KEY: ${{ inputs.in_key }}
+        run: aws s3 cp "s3://${BUCKET}/${IN_KEY}" in.jsonl
+
+      - name: Cap
+        env:
+          CAP: ${{ inputs.cap }}
+        run: |
+          CAP_FLAGS=""
+          for c in $CAP; do CAP_FLAGS="$CAP_FLAGS --cap $c"; done
+          PYTHONPATH=. python -m protea.cli dataset cap in.jsonl --out capped.jsonl $CAP_FLAGS
+
+      - name: Upload capped split to R2
+        env:
+          BUCKET: ${{ inputs.bucket }}
+          OUT_KEY: ${{ inputs.out_key }}
+        run: |
+          if [ -f capped.jsonl ]; then
+            aws s3 cp capped.jsonl "s3://${BUCKET}/${OUT_KEY}"
+            echo "capped rows: $(wc -l < capped.jsonl) -> ${OUT_KEY}"
+          else
+            echo "no output written"
+            exit 1
+          fi
