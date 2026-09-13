@@ -477,6 +477,10 @@ def dataset_blend(
         False, help="Take only rows already stamped review_status=approved; default keeps non-rejected rows."
     ),
     pii_mode: str = typer.Option("synthetic", help="PII scrub mode for synthetic rows: synthetic | placeholder."),
+    cap: list[str] = typer.Option(
+        [], "--cap", help="Cap synthetic rows per task type, e.g. --cap tool_calling=250 (repeatable). "
+        "Deterministically down-samples so one synthesized family cannot swamp the blend.",
+    ),
 ) -> None:
     """Merge reviewed synthetic rows into a mined train split: drop rejected, scrub PII, dedup, mark approved.
 
@@ -486,12 +490,20 @@ def dataset_blend(
     from protea.data_pipeline.blend import blend
     from protea.schemas.examples import TrainingExample, iter_examples
 
+    synthetic_cap: dict[str, int] = {}
+    for item in cap:
+        task, sep, n = item.partition("=")
+        if not sep or not n.strip().isdigit():
+            _fail(f"--cap expects TASK=N (non-negative integer), got {item!r}")
+        synthetic_cap[task.strip()] = int(n)
+
     mined_rows = [TrainingExample.model_validate_json(line) for _, line in iter_examples(mined)]
     synth_rows: list[TrainingExample] = []
     for path in synthetic:
         synth_rows.extend(TrainingExample.model_validate_json(line) for _, line in iter_examples(path))
 
-    merged, report = blend(mined_rows, synth_rows, keep_flagged=not approved_only, pii_mode=pii_mode)
+    merged, report = blend(mined_rows, synth_rows, keep_flagged=not approved_only, pii_mode=pii_mode,
+                           synthetic_cap=synthetic_cap or None)
 
     with out.open("w", encoding="utf-8") as fh:
         for ex in merged:
@@ -499,7 +511,7 @@ def dataset_blend(
 
     typer.echo(f"mined {report.mined_rows} + synthetic {report.synthetic_in} "
                f"(dropped: rejected {report.dropped_rejected}, unapproved {report.dropped_unapproved}, "
-               f"duplicate {report.dropped_duplicate})")
+               f"capped {report.dropped_capped}, duplicate {report.dropped_duplicate})")
     if report.pii_redactions:
         typer.echo(f"pii scrubbed on {report.pii_scrubbed_rows} row(s): {report.pii_redactions}")
     typer.secho(f"merged {report.merged_total} rows ({report.synthetic_kept} synthetic) -> {out}",

@@ -22,9 +22,10 @@ on:
       config:
         description: Training config to run. Pick the experiment deliberately — the default is the current one; leaving it wrong trains the wrong experiment on your data (and mislabels the adapter).
         required: true
-        default: configs/training/protea-agent-8b-qlora-0.2.yaml
+        default: configs/training/protea-agent-8b-qlora-0.2.1.yaml
         type: choice
         options:
+          - configs/training/protea-agent-8b-qlora-0.2.1.yaml
           - configs/training/protea-agent-8b-qlora-0.2.yaml
           - configs/training/protea-agent-8b-qlora.yaml
           - configs/training/citizenai-adapter-0.1.yaml

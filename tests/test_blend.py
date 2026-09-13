@@ -70,6 +70,32 @@ def test_duplicate_synthetic_rows_collapse():
     assert report.ok
 
 
+def test_synthetic_cap_downsamples_per_task_type_and_is_deterministic():
+    # 10 distinct synthetic tool_calling rows, capped to 3: exactly 3 survive, the rest are counted as capped,
+    # and mined rows are untouched. Determinism is keyed on the row id, so re-blending the SAME rows (same ids)
+    # keeps the SAME subset — which is the real guarantee, since we cap an existing reviewed file.
+    import copy
+    synth = [_synthetic(f"reply {i}", family=f"fam{i}", tool=f"tool_{i}") for i in range(10)]
+
+    merged, report = blend([_mined("keep me")], copy.deepcopy(synth), synthetic_cap={"tool_calling": 3})
+    assert report.synthetic_kept == 3
+    assert report.dropped_capped == 7
+    assert report.merged_total == 4  # 1 mined + 3 synthetic
+    assert report.ok
+    assert sum(1 for ex in merged if not ex.metadata.synthetic) == 1  # mined survived, uncapped
+
+    merged2, _ = blend([_mined("keep me")], copy.deepcopy(synth), synthetic_cap={"tool_calling": 3})
+    kept_ids = lambda m: sorted(str(ex.metadata.id) for ex in m if ex.metadata.synthetic)
+    assert kept_ids(merged) == kept_ids(merged2)  # same input ids -> same kept subset
+
+
+def test_cap_above_count_or_absent_task_is_a_noop():
+    synth = [_synthetic("a", family="x"), _synthetic("b", family="y")]
+    # cap larger than the group, and a cap for a task type not present, both leave every row in.
+    merged, report = blend([_mined("m")], synth, synthetic_cap={"tool_calling": 99, "routing": 5})
+    assert report.dropped_capped == 0 and report.synthetic_kept == 2
+
+
 def test_mined_rows_win_over_synthetic_duplicates():
     # A synthetic row whose target (reply + tool name) duplicates a mined tool_calling row must lose; the mined
     # row stays. Mined rows are ordered first, so they are never the one dropped.

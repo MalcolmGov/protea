@@ -1,0 +1,53 @@
+# Third experiment (P0.1): the failure-driven follow-up to protea-agent-0.2 (P0).
+#
+# P0 regressed the base on ZaraScore (80.7% -> 77.9%) and breached ADR-016 budgets. Root cause, from the data:
+# the 0.2 blend was 42% synthetic tool_calling (724 rows, all one synthesized family), which swamped the mined
+# categories and drove catastrophic forgetting — connector_selection -19.2, failure_recovery -55.5 (a base skill
+# it had at 72%). See docs/lineage/protea-agent.md for the full delta.
+#
+# P0.1 changes EXACTLY ONE variable versus P0: the blend. Synthetic tool_calling is capped 724 -> 250 (~20% of
+# the mix, peer-sized with the mined categories) so it no longer swamps the set — while keeping enough of it to
+# retain the anti-hallucination framing that lifted P0's hallucination (+38.9) and safety (+11.2). Every
+# hyperparameter below is identical to protea-agent-8b-qlora-0.2.yaml (epochs 3 included), so the ZaraScore delta
+# is attributable to the rebalanced blend alone. Produce the train split with the blend workflow's cap input
+# (cap: "tool_calling=250") or `dataset blend ... --cap tool_calling=250`.
+model:
+  base_model: Qwen/Qwen3-8B
+  revision: b968826d9c46dd6066d109eabc6255188de91218   # same pinned commit as the B0 baseline
+  trust_remote_code: false
+  load_in_4bit: true
+training:
+  method: qlora
+  epochs: 3
+  learning_rate: 1.0e-4
+  max_sequence_length: 6144
+  per_device_batch_size: 2
+  gradient_accumulation_steps: 8
+  gradient_checkpointing: true
+  warmup_ratio: 0.03
+  lr_scheduler: cosine
+  seed: 42
+  bf16: true
+  save_steps: 100
+  eval_steps: 100
+lora:
+  rank: 32
+  alpha: 64
+  dropout: 0.05
+dataset:
+  # train.blended.jsonl = the 0.2 mined train split + reviewed synthetic tool_calling CAPPED to 250 rows
+  # (`dataset blend ... --cap tool_calling=250`). validation/test/golden stay the mined build's — the eval
+  # hold-out is never diluted, and is byte-identical to the one B0 and P0 were scored on.
+  train: protea_data/agent-training/0.2.1/train.blended.jsonl
+  validation: protea_data/agent-training/0.2.0/validation.jsonl
+  dataset_key: agent-training-0.2.1
+output:
+  dir: checkpoints/protea-agent-0.2.1
+  experiment_name: protea-agent-0.2.1-qwen3-8b-qlora
+  model_family: protea-agent
+  tags: {base: qwen3-8b, method: qlora, data: "0.2.1-rebalanced"}
+budget:
+  max_runtime_minutes: 300
+  max_cost_usd: 40
+  idle_shutdown_minutes: 15
+  checkpoint_before_shutdown: true

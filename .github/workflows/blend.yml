@@ -35,6 +35,13 @@ on:
         default: "no"
         type: choice
         options: [ "no", "yes" ]
+      cap:
+        description: >-
+          Optional per-task-type cap on synthetic rows, e.g. "tool_calling=250" (space-separated for several).
+          Deterministically down-samples so one synthesized family can't swamp the blend — this is how the 0.2.1
+          rebalance is produced (protea-agent-0.2 regressed because synthetic tool_calling was 42% of the mix).
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -80,11 +87,14 @@ jobs:
       - name: Blend
         env:
           APPROVED_ONLY: ${{ inputs.approved_only }}
+          CAP: ${{ inputs.cap }}
         run: |
           FLAG=""
           [ "$APPROVED_ONLY" = "yes" ] && FLAG="--approved-only"
+          CAP_FLAGS=""
+          for c in $CAP; do CAP_FLAGS="$CAP_FLAGS --cap $c"; done
           PYTHONPATH=. python -m protea.cli dataset blend \
-            in/mined.jsonl $SYNTH_PATHS --out merged.jsonl $FLAG
+            in/mined.jsonl $SYNTH_PATHS --out merged.jsonl $FLAG $CAP_FLAGS
 
       - name: Upload merged split to R2
         env:
