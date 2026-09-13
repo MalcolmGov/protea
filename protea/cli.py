@@ -487,15 +487,13 @@ def dataset_blend(
     Only the train split is touched — validation/test/golden stay the mined build's, so the eval hold-out is
     never diluted with synthetic data. Never trains; just assembles the file the training run points at.
     """
-    from protea.data_pipeline.blend import blend
+    from protea.data_pipeline.blend import blend, parse_cap
     from protea.schemas.examples import TrainingExample, iter_examples
 
-    synthetic_cap: dict[str, int] = {}
-    for item in cap:
-        task, sep, n = item.partition("=")
-        if not sep or not n.strip().isdigit():
-            _fail(f"--cap expects TASK=N (non-negative integer), got {item!r}")
-        synthetic_cap[task.strip()] = int(n)
+    try:
+        synthetic_cap = parse_cap(cap)
+    except ValueError as e:
+        _fail(f"--{e}")
 
     mined_rows = [TrainingExample.model_validate_json(line) for _, line in iter_examples(mined)]
     synth_rows: list[TrainingExample] = []
@@ -518,6 +516,44 @@ def dataset_blend(
                 fg=typer.colors.GREEN)
     if not report.ok:
         _fail("blend accounting mismatch")
+
+
+@dataset_app.command("cap")
+def dataset_cap(
+    source: Path = typer.Argument(..., exists=True, help="A JSONL split to rebalance (e.g. an existing blend)."),
+    out: Path = typer.Option(..., help="Where to write the capped split."),
+    cap: list[str] = typer.Option(
+        ..., "--cap", help="Per-task-type cap, e.g. --cap tool_calling=250 (repeatable). Deterministically "
+        "down-samples so one task type can't dominate.",
+    ),
+) -> None:
+    """Deterministically cap rows per task type in an existing split, without re-blending.
+
+    Use this to rebalance a blend already assembled (e.g. produce the 0.2.1 split by capping tool_calling in the
+    0.2.0 blend) when the separate mined/synthetic inputs aren't at hand. Rows of an uncapped task type pass
+    through untouched; the kept subset of a capped type is reproducible (stable hash of the row id).
+    """
+    from protea.data_pipeline.blend import apply_cap, parse_cap
+    from protea.schemas.examples import TrainingExample, iter_examples
+
+    try:
+        caps = parse_cap(cap)
+    except ValueError as e:
+        _fail(f"--{e}")
+
+    rows = [TrainingExample.model_validate_json(line) for _, line in iter_examples(source)]
+    kept, dropped = apply_cap(rows, caps)
+
+    with out.open("w", encoding="utf-8") as fh:
+        for ex in kept:
+            fh.write(ex.model_dump_json() + "\n")
+
+    by_task: dict[str, int] = {}
+    for ex in kept:
+        key = str(ex.metadata.task_type)
+        by_task[key] = by_task.get(key, 0) + 1
+    typer.echo(f"read {len(rows)} rows; capped {caps}; dropped {dropped}")
+    typer.secho(f"kept {len(kept)} rows -> {out}  ({by_task})", fg=typer.colors.GREEN)
 
 
 # ---- registry -----------------------------------------------------------------------------------

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from protea.data_pipeline.blend import blend
+import pytest
+
+from protea.data_pipeline.blend import apply_cap, blend, parse_cap
 from protea.schemas.examples import ExampleMetadata, ReviewStatus, ScanStatus, TaskType, TrainingExample
 from protea.schemas.generation import Message, ToolCall
 
@@ -90,6 +92,26 @@ def test_synthetic_cap_downsamples_per_task_type_and_is_deterministic():
         return sorted(str(ex.metadata.id) for ex in rows if ex.metadata.synthetic)
 
     assert kept_ids(merged) == kept_ids(merged2)  # same input ids -> same kept subset
+
+
+def test_parse_cap_reads_pairs_and_rejects_bad_input():
+    assert parse_cap(["tool_calling=250", "routing=10"]) == {"tool_calling": 250, "routing": 10}
+    assert parse_cap([]) == {}
+    for bad in ["tool_calling", "tool_calling=", "tool_calling=-5", "tool_calling=x"]:
+        with pytest.raises(ValueError):
+            parse_cap([bad])
+
+
+def test_apply_cap_standalone_caps_per_task_and_leaves_others():
+    # apply_cap on a mixed set (used by `dataset cap` to rebalance an existing blend without re-blending).
+    rows = ([_synthetic(f"t{i}", family=f"f{i}", tool=f"tool_{i}") for i in range(8)]
+            + [_mined(f"a{i}", family=f"g{i}") for i in range(3)])  # 8 tool_calling + 3 agent_generation
+    kept, dropped = apply_cap(rows, {"tool_calling": 2})
+    assert dropped == 6
+    kept_by_task = {}
+    for ex in kept:
+        kept_by_task[str(ex.metadata.task_type)] = kept_by_task.get(str(ex.metadata.task_type), 0) + 1
+    assert kept_by_task == {"tool_calling": 2, "agent_generation": 3}  # only tool_calling capped
 
 
 def test_cap_above_count_or_absent_task_is_a_noop():

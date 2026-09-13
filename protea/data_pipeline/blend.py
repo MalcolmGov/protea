@@ -42,10 +42,21 @@ class BlendReport(BaseModel):
         return self.merged_total == self.mined_rows + self.synthetic_kept
 
 
-def _apply_cap(
+def parse_cap(items: list[str]) -> dict[str, int]:
+    """Parse ``["tool_calling=250", ...]`` into ``{"tool_calling": 250}``. Raises ValueError on a bad item."""
+    cap: dict[str, int] = {}
+    for item in items:
+        task, sep, n = item.partition("=")
+        if not sep or not n.strip().isdigit():
+            raise ValueError(f"cap expects TASK=N (non-negative integer), got {item!r}")
+        cap[task.strip()] = int(n)
+    return cap
+
+
+def apply_cap(
     rows: list[TrainingExample], cap: dict[str, int]
 ) -> tuple[list[TrainingExample], int]:
-    """Deterministically down-sample synthetic rows to at most ``cap[task_type]`` per task type.
+    """Deterministically down-sample rows to at most ``cap[task_type]`` per task type.
 
     Order is by a stable hash of the row id (not file order or family), so the kept subset is reproducible
     and not biased toward whichever families sort first. A task type absent from ``cap`` is left untouched.
@@ -118,7 +129,7 @@ def blend(
         kept.append(ex)
 
     if synthetic_cap:
-        kept, report.dropped_capped = _apply_cap(kept, synthetic_cap)
+        kept, report.dropped_capped = apply_cap(kept, synthetic_cap)
 
     # Dedup the whole set together: mined rows first so a synthetic near-duplicate of a mined row loses, and
     # synthetic-vs-synthetic dups collapse. mark_duplicates is family/task-type aware.
