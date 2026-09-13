@@ -85,7 +85,10 @@ def test_synthetic_cap_downsamples_per_task_type_and_is_deterministic():
     assert sum(1 for ex in merged if not ex.metadata.synthetic) == 1  # mined survived, uncapped
 
     merged2, _ = blend([_mined("keep me")], copy.deepcopy(synth), synthetic_cap={"tool_calling": 3})
-    kept_ids = lambda m: sorted(str(ex.metadata.id) for ex in m if ex.metadata.synthetic)
+
+    def kept_ids(rows):
+        return sorted(str(ex.metadata.id) for ex in rows if ex.metadata.synthetic)
+
     assert kept_ids(merged) == kept_ids(merged2)  # same input ids -> same kept subset
 
 

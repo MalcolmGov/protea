@@ -60,7 +60,7 @@ def _apply_cap(
         if limit is None or len(group) <= limit:
             keep_ids.update(id(ex) for ex in group)
             continue
-        ordered = sorted(group, key=lambda e: hashlib.sha1(str(e.metadata.id).encode()).hexdigest())
+        ordered = sorted(group, key=lambda e: hashlib.sha256(str(e.metadata.id).encode()).hexdigest())
         keep_ids.update(id(ex) for ex in ordered[:limit])
     kept = [ex for ex in rows if id(ex) in keep_ids]
     return kept, len(rows) - len(kept)
