@@ -1,0 +1,52 @@
+# Fourth experiment (P0.2): the data-quality fix for the agent_generation collapse.
+#
+# P0 and P0.1 both lost to the frozen base; the biggest driver was agent_generation collapsing (73.7 -> 72 -> 56)
+# because the mined agent-spec targets embed multi-thousand-token guardrails/system_prompt prose that overflows
+# the eval's generation budget, so the JSON truncates and scores 0. See docs/experiments/agent-generation-rootcause.md.
+#
+# 0.2.2 = the 0.2.1 blend with `dataset trim` applied: guardrails/system_prompt capped at 800 chars (every
+# eval-scored field left byte-identical) and the 58 off-taxonomy commerce/sales rows dropped. Verified offline:
+# 330/330 trimmed targets still score 1.0 through the real evaluators, and 0% exceed the 4000-token budget (was 35%).
+#
+# TWO changes vs P0.1, both well-motivated and cost-driven (one run, not two): (1) the trimmed data; (2) epochs
+# 3 -> 1 to curb the catastrophic forgetting that washed out failure_recovery/agent capabilities. assistant_only_loss
+# stays False here (enabling it needs a chat template with {% generation %} markers + a smoke test — a later lever).
+model:
+  base_model: Qwen/Qwen3-8B
+  revision: b968826d9c46dd6066d109eabc6255188de91218   # same pinned commit as the B0 baseline
+  trust_remote_code: false
+  load_in_4bit: true
+training:
+  method: qlora
+  epochs: 1
+  learning_rate: 1.0e-4
+  max_sequence_length: 6144
+  per_device_batch_size: 2
+  gradient_accumulation_steps: 8
+  gradient_checkpointing: true
+  warmup_ratio: 0.03
+  lr_scheduler: cosine
+  seed: 42
+  bf16: true
+  save_steps: 100
+  eval_steps: 100
+lora:
+  rank: 32
+  alpha: 64
+  dropout: 0.05
+dataset:
+  # train.blended.jsonl = the 0.2.1 blend after `dataset trim` (agent_generation targets compressed, off-taxonomy
+  # rows dropped). validation/test/golden stay the mined build's — the eval hold-out is byte-identical to B0's.
+  train: protea_data/agent-training/0.2.2/train.blended.jsonl
+  validation: protea_data/agent-training/0.2.0/validation.jsonl
+  dataset_key: agent-training-0.2.2
+output:
+  dir: checkpoints/protea-agent-0.2.2
+  experiment_name: protea-agent-0.2.2-qwen3-8b-qlora
+  model_family: protea-agent
+  tags: {base: qwen3-8b, method: qlora, data: "0.2.2-trimmed"}
+budget:
+  max_runtime_minutes: 300
+  max_cost_usd: 40
+  idle_shutdown_minutes: 15
+  checkpoint_before_shutdown: true

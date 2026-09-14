@@ -1,0 +1,92 @@
+name: Trim a train split (compress fields, drop off-taxonomy rows)
+
+# Rewrites an existing train split in R2 with `dataset trim`, without re-mining — the data-quality fix for the
+# agent_generation collapse (see docs/experiments/agent-generation-rootcause.md). Caps over-long target string
+# fields (guardrails/system_prompt) that overflow the eval's generation budget, and drops rows carrying
+# off-taxonomy field values. Every eval-scored field is left byte-identical. Produces the 0.2.2 split from 0.2.1.
+#
+# Spends NOTHING: CPU runner, an S3 read + write with the R2 secrets already in the repo. No teacher, no GPU.
+on:
+  workflow_dispatch:
+    inputs:
+      bucket:
+        description: R2 bucket name (e.g. protea-runs)
+        required: true
+        default: protea-runs
+      endpoint:
+        description: R2 S3 endpoint, e.g. https://<account-id>.r2.cloudflarestorage.com
+        required: true
+      in_key:
+        description: R2 key of the split to trim
+        required: true
+        default: protea_data/0.2.1/train.blended.jsonl
+      out_key:
+        description: R2 key to write the trimmed split to (point the training run's train_key at this)
+        required: true
+        default: protea_data/0.2.2/train.blended.jsonl
+      task_type:
+        description: Task type(s) to trim (space-separated); others pass through
+        required: true
+        default: agent_generation
+      cap_chars:
+        description: Cap target string field(s) to N chars, space-separated FIELD=N
+        required: true
+        default: guardrails=800 system_prompt=800
+      drop_field:
+        description: 'Drop rows whose target field is one of these values, space-separated FIELD=v1,v2 (blank = none)'
+        required: false
+        default: category=commerce,sales
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trim
+  cancel-in-progress: false
+
+env:
+  AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+  AWS_ENDPOINT_URL: ${{ inputs.endpoint }}
+  AWS_DEFAULT_REGION: auto
+
+jobs:
+  trim:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: "pip install --only-binary :all: --require-hashes -r requirements/base.txt"
+
+      - name: Fetch the split from R2
+        env:
+          BUCKET: ${{ inputs.bucket }}
+          IN_KEY: ${{ inputs.in_key }}
+        run: aws s3 cp "s3://${BUCKET}/${IN_KEY}" in.jsonl
+
+      - name: Trim
+        env:
+          TASK_TYPE: ${{ inputs.task_type }}
+          CAP_CHARS: ${{ inputs.cap_chars }}
+          DROP_FIELD: ${{ inputs.drop_field }}
+        run: |
+          ARGS=""
+          for x in $TASK_TYPE;  do ARGS="$ARGS --task-type $x"; done
+          for x in $CAP_CHARS;  do ARGS="$ARGS --cap-chars $x"; done
+          for x in $DROP_FIELD; do ARGS="$ARGS --drop-field $x"; done
+          PYTHONPATH=. python -m protea.cli dataset trim in.jsonl --out trimmed.jsonl $ARGS
+
+      - name: Upload trimmed split to R2
+        env:
+          BUCKET: ${{ inputs.bucket }}
+          OUT_KEY: ${{ inputs.out_key }}
+        run: |
+          if [ -f trimmed.jsonl ]; then
+            aws s3 cp trimmed.jsonl "s3://${BUCKET}/${OUT_KEY}"
+            echo "trimmed rows: $(wc -l < trimmed.jsonl) -> ${OUT_KEY}"
+          else
+            echo "no output written"
+            exit 1
+          fi

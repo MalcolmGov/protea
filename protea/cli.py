@@ -556,6 +556,62 @@ def dataset_cap(
     typer.secho(f"kept {len(kept)} rows -> {out}  ({by_task})", fg=typer.colors.GREEN)
 
 
+@dataset_app.command("trim")
+def dataset_trim(
+    source: Path = typer.Argument(..., exists=True, help="A JSONL split to trim (e.g. an existing blend)."),
+    out: Path = typer.Option(..., help="Where to write the trimmed split."),
+    task_type: list[str] = typer.Option(
+        ["agent_generation"], "--task-type", help="Task type(s) to trim (repeatable). Others pass through.",
+    ),
+    cap_chars: list[str] = typer.Option(
+        ["guardrails=800", "system_prompt=800"], "--cap-chars",
+        help="Truncate a target string field to N chars, e.g. --cap-chars guardrails=800 (repeatable). The eval "
+        "never scores these fields, but their length blows the generation budget and truncates the whole target.",
+    ),
+    drop_field: list[str] = typer.Option(
+        ["category=commerce,sales"], "--drop-field",
+        help="Drop rows whose target field has one of these values, e.g. --drop-field category=commerce,sales "
+        "(repeatable). Use for off-taxonomy labels the eval can never mark right.",
+    ),
+) -> None:
+    """Trim over-long string fields and drop off-taxonomy rows in an existing split (no re-mining, no GPU).
+
+    The fix for the agent_generation collapse: the mined agent specs embed multi-thousand-token guardrails /
+    system_prompt prose the eval never scores but that overflows the eval's generation budget, so targets truncate
+    mid-JSON and score 0. Defaults cap those two fields at 800 chars and drop the off-taxonomy commerce/sales
+    categories; every eval-scored field (category/tier/channels/languages/tools) is left byte-identical.
+    """
+    from protea.data_pipeline.trim import trim
+    from protea.schemas.examples import TrainingExample, iter_examples
+
+    caps: dict[str, int] = {}
+    for item in cap_chars:
+        field, sep, n = item.partition("=")
+        if not sep or not n.strip().isdigit():
+            _fail(f"--cap-chars expects FIELD=N, got {item!r}")
+        caps[field.strip()] = int(n)
+
+    drops: dict[str, set[str]] = {}
+    for item in drop_field:
+        field, sep, vals = item.partition("=")
+        if not sep or not vals.strip():
+            _fail(f"--drop-field expects FIELD=v1,v2, got {item!r}")
+        drops[field.strip()] = {v.strip() for v in vals.split(",") if v.strip()}
+
+    rows = [TrainingExample.model_validate_json(line) for _, line in iter_examples(source)]
+    kept, report = trim(rows, task_types=set(task_type), cap_chars=caps, drop_field_values=drops)
+
+    with out.open("w", encoding="utf-8") as fh:
+        for ex in kept:
+            fh.write(ex.model_dump_json() + "\n")
+
+    typer.echo(f"read {report.rows_in} rows; trimmed fields {report.fields_trimmed} "
+               f"(−{report.chars_removed} chars); dropped off-taxonomy {report.rows_dropped_offtaxonomy}")
+    typer.secho(f"kept {report.rows_kept} rows -> {out}", fg=typer.colors.GREEN)
+    if not report.ok:
+        _fail("trim accounting mismatch")
+
+
 # ---- registry -----------------------------------------------------------------------------------
 def _registries():
     from protea.config import get_settings
