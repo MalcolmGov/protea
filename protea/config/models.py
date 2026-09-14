@@ -161,6 +161,7 @@ class EvaluationConfig(BaseModel):
     max_tool_rounds: int = 3
     max_tokens: int = 800
     temperature: float = 0.0
+    system_prompt: str | None = None  # product/system-prompt overlay prepended to every task (None = task as-authored)
     prices: dict[str, TokenPrice] = Field(default_factory=dict)  # model id (or prefix) -> price
 
     def price_for(self, model: str) -> TokenPrice | None:

@@ -36,6 +36,14 @@ on:
         default: "2"
         type: choice
         options: ["2", "5", "10", "full"]
+      categories:
+        description: 'Optional comma-separated category filter, e.g. hallucination,safety,failure_recovery (blank = all categories). Use with per_category=full to score just those tasks cheaply.'
+        required: false
+        default: ""
+      system_prompt_file:
+        description: 'Optional repo path to a system-prompt overlay prepended to every task, e.g. configs/evaluation/guardrail-system-prompt.md (blank = tasks as-authored). Scores the base under its production guardrail framing (Exp 0).'
+        required: false
+        default: ""
       config:
         description: Training config (used ONLY to satisfy the launcher and estimate; not what runs on the pod)
         required: true
@@ -145,6 +153,8 @@ jobs:
           PROTEA_BASE_MODEL: ${{ inputs.base_model }}
           PROTEA_BASE_REVISION: ${{ inputs.base_revision }}
           PROTEA_EVAL_PER_CATEGORY: ${{ inputs.per_category }}
+          PROTEA_EVAL_CATEGORIES: ${{ inputs.categories }}
+          PROTEA_EVAL_SYSTEM_PROMPT_FILE: ${{ inputs.system_prompt_file }}
         run: |
           CANDIDATES=$(printf '%s\n' "$REMOTE" \
             configs/remote/runpod-a6000-community.yaml \
