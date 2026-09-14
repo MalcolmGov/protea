@@ -73,6 +73,7 @@ class RunPodAdapter(RemoteAdapter):
             "PROTEA_EVAL_PER_CATEGORY",
             "PROTEA_EVAL_CATEGORIES",
             "PROTEA_EVAL_SYSTEM_PROMPT_FILE",
+            "PROTEA_LOCAL_ENABLE_THINKING",
             "PROTEA_SERVED_AS",
             # synth entrypoint (which seeds to complete, open-weight teacher, targeting) — unset for train/eval.
             "PROTEA_SEEDS_KEY",

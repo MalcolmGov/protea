@@ -44,6 +44,12 @@ on:
         description: 'Optional repo path to a system-prompt overlay prepended to every task, e.g. configs/evaluation/guardrail-system-prompt.md (blank = tasks as-authored). Scores the base under its production guardrail framing (Exp 0).'
         required: false
         default: ""
+      enable_thinking:
+        description: "Qwen3 reasoning mode. 'default' leaves the chat template alone (the sealed instrument). 'false' switches thinking OFF — needed to score the BARE BASE in a sane time (thinking-on fills max_tokens with a <think> trace every round, ~100x slower/task, times the pod out). Adapters are already terse: leave 'default'."
+        required: false
+        default: "default"
+        type: choice
+        options: ["default", "false", "true"]
       config:
         description: Training config (used ONLY to satisfy the launcher and estimate; not what runs on the pod)
         required: true
@@ -155,6 +161,9 @@ jobs:
           PROTEA_EVAL_PER_CATEGORY: ${{ inputs.per_category }}
           PROTEA_EVAL_CATEGORIES: ${{ inputs.categories }}
           PROTEA_EVAL_SYSTEM_PROMPT_FILE: ${{ inputs.system_prompt_file }}
+          # 'default' -> empty (dropped by the launcher's passthrough, so the chat template default stands);
+          # 'false'/'true' -> forwarded to the pod, where settings parse it into the provider's enable_thinking.
+          PROTEA_LOCAL_ENABLE_THINKING: ${{ inputs.enable_thinking != 'default' && inputs.enable_thinking || '' }}
         run: |
           CANDIDATES=$(printf '%s\n' "$REMOTE" \
             configs/remote/runpod-a6000-community.yaml \

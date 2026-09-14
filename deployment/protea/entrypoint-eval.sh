@@ -82,7 +82,11 @@ EVAL_ARGS=()
 # production guardrail framing — the Exp 0 "is the guardrail gain a prompt effect?" run.
 [ -n "${PROTEA_EVAL_SYSTEM_PROMPT_FILE:-}" ] && EVAL_ARGS+=(--system-prompt-file "$PROTEA_EVAL_SYSTEM_PROMPT_FILE")
 
-echo "protea-eval: scoring $SCORING_LABEL on $EVAL_CONFIG (per_category=${PER_CATEGORY:-full})"
+# Qwen3 reasoning mode (PROTEA_LOCAL_ENABLE_THINKING) is read straight from the env by settings — the local
+# provider forwards it to the chat template. Not a CLI flag; just surface it in the log for observability. Unset
+# leaves the template default (the sealed instrument); "false" is the base-scoring path (thinking-on fills
+# max_tokens with a <think> trace every round, ~100x slower/task, and times the pod out before scoring finishes).
+echo "protea-eval: scoring $SCORING_LABEL on $EVAL_CONFIG (per_category=${PER_CATEGORY:-full}, thinking=${PROTEA_LOCAL_ENABLE_THINKING:-template-default})"
 # `local` is a free provider and the suite's judge is null, so this spends no API tokens; --confirm is harmless.
 timeout --signal=TERM --kill-after=120 "$((MAX_MINUTES * 60))" \
   protea evaluate run --provider local --model "$BASE_MODEL" \

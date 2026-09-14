@@ -108,6 +108,7 @@ def _build_local(s: ProteaSettings, model: str | None, kw: dict[str, Any], ov: d
         served_as=ov.pop("served_as", s.local_served_as),
         revision=ov.pop("revision", s.local_revision),
         threads=ov.pop("threads", s.local_threads),
+        enable_thinking=ov.pop("enable_thinking", s.local_enable_thinking),
         **kw,
         **ov,
     )
