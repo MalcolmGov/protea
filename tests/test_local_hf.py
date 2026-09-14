@@ -125,3 +125,46 @@ def test_build_local_threads_revision_from_settings_and_override(monkeypatch):
     assert s.local_revision == "from-settings"
     assert build_provider("local", model="Qwen/Qwen3-8B", settings=s).revision == "from-settings"
     assert build_provider("local", model="Qwen/Qwen3-8B", settings=s, revision="explicit").revision == "explicit"
+
+
+def test_enable_thinking_is_stored_and_defaults_to_none():
+    """The reasoning-mode flag is carried onto the provider; unset stays None so the chat-template default (the
+    sealed instrument's behaviour) is untouched."""
+    assert LocalHFProvider("Qwen/Qwen3-8B", enable_thinking=False).enable_thinking is False
+    assert LocalHFProvider("Qwen/Qwen3-8B").enable_thinking is None
+
+
+def test_render_prompt_forwards_enable_thinking_only_when_set():
+    """When unset, no enable_thinking kwarg reaches apply_chat_template (template default stands); when set, it is
+    forwarded verbatim so Qwen3 reasoning can be switched off to score the base at a sane speed."""
+
+    class _Tok:
+        def __init__(self):
+            self.kwargs: dict | None = None
+
+        def apply_chat_template(self, messages, **kw):  # noqa: ANN001 - test stub
+            self.kwargs = kw
+            return "PROMPT"
+
+    req = GenerationRequest(messages=[Message(role="user", content="hi")], max_tokens=8)
+
+    tok = _Tok()
+    assert LocalHFProvider("m")._render_prompt(tok, req) == "PROMPT"
+    assert "enable_thinking" not in tok.kwargs  # the sealed instrument: template decides
+
+    tok = _Tok()
+    LocalHFProvider("m", enable_thinking=False)._render_prompt(tok, req)
+    assert tok.kwargs["enable_thinking"] is False
+
+
+def test_build_local_enable_thinking_from_settings_and_override(monkeypatch):
+    """build_provider forwards PROTEA_LOCAL_ENABLE_THINKING to the provider, and an explicit override wins."""
+    from protea.config.settings import ProteaSettings
+    from protea.providers import build_provider
+
+    assert ProteaSettings().local_enable_thinking is None  # unset -> template default
+    monkeypatch.setenv("PROTEA_LOCAL_ENABLE_THINKING", "false")
+    s = ProteaSettings()
+    assert s.local_enable_thinking is False
+    assert build_provider("local", model="Qwen/Qwen3-8B", settings=s).enable_thinking is False
+    assert build_provider("local", model="Qwen/Qwen3-8B", settings=s, enable_thinking=True).enable_thinking is True

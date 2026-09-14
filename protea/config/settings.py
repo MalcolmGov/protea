@@ -39,6 +39,12 @@ class ProteaSettings(BaseSettings):
     local_adapter: str | None = Field(default=None, validation_alias=AliasChoices("PROTEA_LOCAL_ADAPTER"))
     local_served_as: str | None = Field(default=None, validation_alias=AliasChoices("PROTEA_LOCAL_SERVED_AS"))
     local_threads: int | None = Field(default=None, validation_alias=AliasChoices("PROTEA_LOCAL_THREADS"))
+    # None -> leave the chat template's reasoning default alone (the sealed instrument). False switches Qwen3
+    # thinking off so the untrained base scores at adapter-like speed instead of filling max_tokens with a
+    # <think> trace every round (which times a pod out before the suite finishes).
+    local_enable_thinking: bool | None = Field(
+        default=None, validation_alias=AliasChoices("PROTEA_LOCAL_ENABLE_THINKING")
+    )
     hf_token: str | None = None
     runpod_api_key: str | None = None
     mlflow_tracking_uri: str | None = None

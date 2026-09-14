@@ -104,17 +104,26 @@ class LocalHFProvider(ModelProvider):
         device: str | None = None,
         threads: int | None = None,
         revision: str | None = None,
+        enable_thinking: bool | None = None,
         **kw: Any,
     ):
         """`model` is the Hugging Face id or path to load; `served_as` is the name reported on responses and in
         benchmark reports (the registry key of the adapter, so release checks can find the evidence). `revision`
-        pins the base to an exact Hub commit — a reproducible baseline cannot load from a moving tag."""
+        pins the base to an exact Hub commit — a reproducible baseline cannot load from a moving tag.
+
+        `enable_thinking` controls the Qwen3 chat template's reasoning mode. Left `None` (the default) the kwarg is
+        not passed, so the template's own default stands — the byte-identical behaviour the sealed instrument was
+        measured under. Set `False` to switch reasoning off: the untrained base otherwise fills the whole
+        `max_tokens` budget with a `<think>` trace every round, which is ~100x slower per task than a trained
+        adapter (it stops early) and blows past a pod's runtime limit before scoring finishes. Off, the base runs
+        at adapter-like speed and matches how it would actually be served (no thinking)."""
         super().__init__(model=served_as or model, **kw)
         self.model_path = model
         self.adapter = adapter
         self.device = device
         self.threads = threads
         self.revision = revision
+        self.enable_thinking = enable_thinking
         self._tok = None
         self._model = None
         self._lock = threading.Lock()
@@ -156,15 +165,27 @@ class LocalHFProvider(ModelProvider):
             self._tok, self._model = tok, model
 
     # ---- generation ----------------------------------------------------------------------------
+    def _template_kwargs(self) -> dict[str, Any]:
+        """Extra chat-template kwargs. Empty when `enable_thinking` is unset, so the template default (the sealed
+        instrument's behaviour) is unchanged; otherwise forward the reasoning-mode flag to the Qwen3 template."""
+        return {} if self.enable_thinking is None else {"enable_thinking": self.enable_thinking}
+
+    def _render_prompt(self, tok: Any, req: GenerationRequest) -> str:
+        return tok.apply_chat_template(
+            to_chat_messages(req),
+            tools=to_chat_tools(req),
+            add_generation_prompt=True,
+            tokenize=False,
+            **self._template_kwargs(),
+        )
+
     def _run(self, request: GenerationRequest) -> GenerationResponse:
         import torch
 
         self._load()
         tok, model = self._tok, self._model
         req = request if request.response_schema is None else self._with_schema_instruction(request)
-        prompt = tok.apply_chat_template(
-            to_chat_messages(req), tools=to_chat_tools(req), add_generation_prompt=True, tokenize=False
-        )
+        prompt = self._render_prompt(tok, req)
         inputs = tok(prompt, return_tensors="pt").to(self.device)
         input_len = int(inputs["input_ids"].shape[1])
         max_new = max(1, min(int(req.max_tokens), MAX_NEW_TOKENS_CAP))
