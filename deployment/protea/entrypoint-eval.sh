@@ -78,6 +78,9 @@ mkdir -p "$OUT"
 EVAL_ARGS=()
 [ -n "$PER_CATEGORY" ] && EVAL_ARGS+=(--per-category "$PER_CATEGORY")
 [ -n "${PROTEA_EVAL_CATEGORIES:-}" ] && EVAL_ARGS+=(--categories "$PROTEA_EVAL_CATEGORIES")
+# Optional product/system-prompt overlay (a repo path baked into the image), to score the base under its
+# production guardrail framing — the Exp 0 "is the guardrail gain a prompt effect?" run.
+[ -n "${PROTEA_EVAL_SYSTEM_PROMPT_FILE:-}" ] && EVAL_ARGS+=(--system-prompt-file "$PROTEA_EVAL_SYSTEM_PROMPT_FILE")
 
 echo "protea-eval: scoring $SCORING_LABEL on $EVAL_CONFIG (per_category=${PER_CATEGORY:-full})"
 # `local` is a free provider and the suite's judge is null, so this spends no API tokens; --confirm is harmless.

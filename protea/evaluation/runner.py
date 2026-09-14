@@ -18,7 +18,7 @@ from protea.evaluation.evaluators import TaskResult, evaluate
 from protea.evaluation.judge import apply_judge
 from protea.evaluation.tasks import EvalTask, approx_prompt_chars
 from protea.providers.base import ModelProvider
-from protea.schemas.generation import RequestMeta
+from protea.schemas.generation import Message, RequestMeta
 
 
 class CategoryScore(BaseModel):
@@ -160,6 +160,14 @@ async def run_task(
 ) -> TaskResult:
     first, *rest = [m for m in task.messages if m.role == "user"]
     prefix = [m for m in task.messages if m.role != "user"]
+    if cfg.system_prompt:
+        # Product/system-prompt overlay: prepend it to the task's own system message (or add one if none), so the
+        # base model is scored under the same guardrail framing it would run with in production.
+        if prefix and prefix[0].role == "system":
+            merged = f"{cfg.system_prompt}\n\n{prefix[0].content or ''}"
+            prefix = [Message(role="system", content=merged), *prefix[1:]]
+        else:
+            prefix = [Message(role="system", content=cfg.system_prompt), *prefix]
     t = await drive_conversation(
         provider,
         prefix,

@@ -279,6 +279,10 @@ def evaluate_run(
     confirm: bool = typer.Option(False, "--confirm", help="Required for any provider that spends tokens."),
     label: str | None = typer.Option(None, help="Run id; defaults to a UTC timestamp."),
     max_tokens: int | None = typer.Option(None, help="Override the config's max_tokens (recorded in the config hash)."),
+    system_prompt_file: Path | None = typer.Option(
+        None, exists=True, help="A file whose contents are prepended to every task as a product/system-prompt "
+        "overlay (recorded in the config hash). Use to score the base under its production guardrail framing.",
+    ),
 ) -> None:
     """Run the suite against a provider and write JSON + Markdown reports. Paid providers need --confirm."""
     from protea.config import config_hash
@@ -287,8 +291,13 @@ def evaluate_run(
     from protea.evaluation.runner import run_benchmark
 
     cfg, cfg_hash, tasks, digest = _load(config, root)
+    overrides: dict[str, object] = {}
     if max_tokens is not None:
-        cfg = cfg.model_copy(update={"max_tokens": max_tokens})
+        overrides["max_tokens"] = max_tokens
+    if system_prompt_file is not None:
+        overrides["system_prompt"] = system_prompt_file.read_text(encoding="utf-8").strip()
+    if overrides:
+        cfg = cfg.model_copy(update=overrides)
         cfg_hash = config_hash(cfg)
     tasks = _select(tasks, categories, limit, language, per_category)
     if not tasks:
