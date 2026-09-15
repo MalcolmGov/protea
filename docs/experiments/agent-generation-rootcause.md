@@ -81,3 +81,17 @@ eval. If it clears the gates, it is the first candidate that could beat base; if
 net-negative and should be dropped from the blend (the base is already best there).
 
 Do **not** run another full 206-task eval per iteration, and do **not** rebalance by row count again.
+
+## Outcome (2026-09-15): the trim hypothesis is FALSIFIED
+
+P0.2 ran the trimmed 0.2.2 recipe (1 epoch) on the **full** 206-task suite (run `20260915T100114Z`;
+`docs/lineage/protea-agent.md`). Despite the trim removing **100%** of the 4000-token budget overflows offline,
+**agent_generation got worse, not better: 56.0% (P0.1) → 41.1% (P0.2)** — a −32.6 regression vs base. `json_parsable`
+(15 failures) and `field:category` (13) are still the top agent_gen failures, so the model emits malformed JSON and
+wrong field values for reasons **length does not explain**. Truncation was a real symptom but not the (whole) cause.
+
+Compounding it, epochs 3→1 weakened the guardrail gains (hallucination 80→53), exposing a tension: the synthetic
+framing needs more epochs to imprint, but more epochs cause catastrophic forgetting (failure_recovery 72→22). This is
+a dataset/method problem, not a tunable — the QLoRA agent-adapter program is **paused** and v0 ships as base + prompt
+(ADR-017). A future adapter needs a materially cleaner agent_generation dataset (correct fields) or a scope+method
+change (hallucination-only clean data, assistant_only_loss), not another blend/trim/epoch tweak.
