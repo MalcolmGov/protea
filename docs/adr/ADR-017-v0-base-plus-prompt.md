@@ -2,6 +2,14 @@
 
 **Status:** accepted · **Date:** 2026-09-15 · **Scope:** product/release (ADR-011), training program, regression budgets (ADR-016)
 
+> **Update 2026-09-15 — P0.2 failed the gate; the QLoRA agent-adapter program is paused.** The first test of the
+> hallucination-only gate (P0.2, the trimmed 0.2.2 recipe) came back **agent_generation −32.6** and
+> **failure_recovery −48.9** vs base — a clear fail — and the trim hypothesis was falsified (agent_generation got
+> *worse* despite the token-budget fix). Details in `docs/lineage/protea-agent.md` and
+> `docs/experiments/agent-generation-rootcause.md`. **No adapter ships; v0 = base + guardrail prompt stands.** A
+> future adapter needs a materially cleaner dataset or a scope+method change (hallucination-only data,
+> `assistant_only_loss`), not another blend — so the decisions below hold, and effort pivots to serving base+prompt.
+
 ## Context
 
 The B0→P0→P0.1 empirical loop concluded that **both QLoRA adapters lose to the frozen base** on the full sealed
