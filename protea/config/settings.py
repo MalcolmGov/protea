@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -45,6 +45,15 @@ class ProteaSettings(BaseSettings):
     local_enable_thinking: bool | None = Field(
         default=None, validation_alias=AliasChoices("PROTEA_LOCAL_ENABLE_THINKING")
     )
+
+    @field_validator("local_enable_thinking", "local_threads", mode="before")
+    @classmethod
+    def _blank_env_is_unset(cls, v: object) -> object:
+        """Treat a blank env value as unset. A GitHub Actions `env:` block always sets its keys, using "" for the
+        "leave unset" case (run-eval sets PROTEA_LOCAL_ENABLE_THINKING="" when enable_thinking=default). pydantic
+        cannot parse "" as bool/int, so an empty/whitespace string must collapse to None, not raise."""
+        return None if isinstance(v, str) and v.strip() == "" else v
+
     hf_token: str | None = None
     runpod_api_key: str | None = None
     mlflow_tracking_uri: str | None = None

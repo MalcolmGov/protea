@@ -168,3 +168,21 @@ def test_build_local_enable_thinking_from_settings_and_override(monkeypatch):
     assert s.local_enable_thinking is False
     assert build_provider("local", model="Qwen/Qwen3-8B", settings=s).enable_thinking is False
     assert build_provider("local", model="Qwen/Qwen3-8B", settings=s, enable_thinking=True).enable_thinking is True
+
+
+def test_blank_enable_thinking_env_is_unset_not_a_parse_error(monkeypatch):
+    """A GitHub Actions env: block always sets PROTEA_LOCAL_ENABLE_THINKING, using "" for enable_thinking=default.
+    An empty/whitespace value must collapse to None (unset), never raise a bool-parse ValidationError that crashes
+    the launcher before it can reach a GPU."""
+    from protea.config.settings import ProteaSettings
+
+    monkeypatch.setenv("PROTEA_LOCAL_ENABLE_THINKING", "")
+    assert ProteaSettings().local_enable_thinking is None
+    monkeypatch.setenv("PROTEA_LOCAL_ENABLE_THINKING", "  ")
+    assert ProteaSettings().local_enable_thinking is None
+    # a real value still parses
+    monkeypatch.setenv("PROTEA_LOCAL_ENABLE_THINKING", "false")
+    assert ProteaSettings().local_enable_thinking is False
+    # the same blank-is-unset guard protects the other optional env field
+    monkeypatch.setenv("PROTEA_LOCAL_THREADS", "")
+    assert ProteaSettings().local_threads is None
