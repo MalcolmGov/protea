@@ -160,3 +160,30 @@ next move is **data quality / method** (is the mined agent_generation data align
 should we ship frozen-base + prompting near-term? is a smaller base + better data the smarter bet?), not a
 fourth blend. Investigation and options are being worked separately; no further training run is justified until
 the agent_generation collapse is root-caused.
+
+## Exp 0 — is the guardrail gain a prompt effect? (2026-09-15)
+
+After root-causing the agent_generation collapse (a train↔eval spec-length mismatch;
+`docs/experiments/agent-generation-rootcause.md`), we tested whether the adapters' *guardrail* wins are a prompt
+effect rather than a weight effect: score the bare base under the product guardrail system prompt
+(`configs/evaluation/guardrail-system-prompt.md`), thinking off, on the 50 guardrail-tier tasks. Full write-up:
+`docs/experiments/exp0-guardrail-prompt-effect.md` (run `20260915T033925Z`).
+
+| Category | B0 (base, no prompt) | P0.1 (adapter) | Exp 0 (base + prompt) |
+|---|---|---|---|
+| hallucination | 34.4% | **80.0%** | 28.9% |
+| safety | 72.1% | 83.3% | **82.1%** |
+| failure_recovery | — | 22.2% | 68.9% |
+
+**The gain splits.** Safety ≈ a **prompt** effect (base+prompt 82.1% ≈ adapter 83.3%, vs base 72.1%).
+Hallucination = a **training** effect the prompt can't touch (base+prompt 28.9% ≈ base; 51 pts below the adapter).
+
+### Decision (ADR-017): ship base + prompt as v0; scope training to hallucination-only
+
+- **v0 = frozen base + guardrail prompt**, served thinking-off. Best overall model *and* the safety posture, at zero
+  training cost. No adapter ships in v0.
+- **Safety leaves the training objective** (the prompt owns it). The QLoRA program is now a single bet: **raise
+  hallucination without regressing agent_generation or failure_recovery below base** (ADR-016 budgets are the gate).
+  **P0.2** (the trimmed 0.2.2 recipe) is the first test of that gate; an adapter ships only if it clears it.
+- Follow-ups: validate thinking-off on the reasoning-heavy categories before locking the serve config; harden the
+  product prompt against the canary-echo failure Exp 0 surfaced.
