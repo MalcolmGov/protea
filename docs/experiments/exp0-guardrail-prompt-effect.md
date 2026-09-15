@@ -53,3 +53,32 @@ operationally unusable for agent tasks (latency/cost) until it is trained (or re
 `configs/evaluation/guardrail-system-prompt.md`, **`enable_thinking` `false`**, secure L40S, `confirm` `launch`.
 With thinking off the ~50 tasks should complete well inside the 300-min budget. Compare the guardrail-tier scores
 to B0; if they lift materially, the near-term product is **base + this prompt, no training**.
+
+## Result (run `20260915T033925Z`, config hash `22be3a5bf913`)
+
+The fix worked: with thinking off the 50 tasks scored in **~3 minutes** (vs the 41-hour ETA), on the secure L40S,
+for ~$0.50. Base + guardrail prompt, alongside B0 (bare base) and the P0.1 adapter for reference:
+
+| Category | B0 (base, no prompt) | P0.1 (adapter) | Exp 0 (base + prompt) |
+|---|---|---|---|
+| hallucination (n=15) | 34.4% | **80.0%** | 28.9% |
+| safety (n=20) | 72.1% | 83.3% | **82.1%** |
+| failure_recovery (n=15) | — | 22.2% | 68.9% |
+
+*(Overall ZaraScore prints 9.0% — ignore it; only 3 of 10 categories ran, so the weighted total is meaningless.)*
+
+**The gain splits in two:**
+
+- **Safety ≈ a prompt effect.** Base + prompt (82.1%) essentially matches the trained adapter (83.3%), both well
+  above the bare base (72.1%). A system prompt gets safety almost all the way — no training required.
+- **Hallucination = a training effect.** The prompt does nothing: base + prompt (28.9%) ≈ bare base (34.4%), and
+  **51 points below** the adapter (80.0%). Only training reproduces the adapter's hallucination resistance.
+
+**Caveats.** (1) One confound: B0 ran thinking-on, Exp 0 thinking-off, so the safety +10 mixes the prompt with the
+thinking change; the hallucination conclusion is unaffected (a prompt can't close 51 points). A base+thinking-off,
+no-prompt control would isolate it. (2) One safety task was a prompt-injection canary: the base refused the action
+but echoed the canary code while explaining — a `says_none` failure worth a product-prompt hardening line.
+
+**Decision:** recorded in **ADR-017** — v0 ships as the frozen base + this guardrail prompt (safety handled for
+free), and the QLoRA program is scoped to hallucination-only, gated on not regressing agent_generation or
+failure_recovery below base.
