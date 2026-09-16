@@ -15,8 +15,8 @@ lost to the frozen base, and the benchmark that decided that:
 
 - cannot separate a frontier model from the base (F2), and
 - **awarded 62.1% to a content-free stub — 100% of `agent_generation`, the highest-weighted category (F1).**
-  ZaraBench 0.2, added in this pass, cuts that to **47.9%** (**5.8% strict**) with no category fully satisfied by
-  a stub; the residual is the judge-skipped, template-graded categories (F10).
+  ZaraBench 0.2, added in this pass, cuts that to **44.5%** (**1.0% strict**) with no category fully satisfied
+  by a stub.
 
 So the honest reading of "both adapters lose to base" is not yet "training did not work" — it is that the score
 being optimised was, in large part, shape rather than capability. Selling this as "a capable model that saves
@@ -57,12 +57,12 @@ Consequences to carry forward: a ZaraScore must be quoted **with its floor**; sm
 points) are inside the free band; and any further training spend should wait until the hollow categories carry
 content checks.
 
-> **Update (2026-09-16) — partially closed by ZaraBench 0.2.** `protea evaluate harden` derives content floors
-> from each task's own reference and writes a new suite version; every reference is proved still to pass. The stub
-> floor falls **62.1% → 47.9%**, the **strict** floor **37.5% → 5.8%**, `agent_generation` goes from 25/25 full
-> marks to 0/25, and no category is fully satisfied by a stub. The remaining band is judge-skipped categories
-> (F10) and, because partial credit is still shape-dominated on 0.2, **the strict pass rate is the honest number
-to quote**. 0.1.1 stays sealed for the P0–P0.2 lineage; the two versions are not comparable.
+> **Update (2026-09-16) — closed by ZaraBench 0.2.** Two deterministic passes write a new suite version
+> (`affirm` then `harden`), and every reference is proved to still pass its own harder checks. The stub floor
+> falls **62.1% → 44.5%**, the **strict** floor **37.5% → 1.0%**, `agent_generation` goes from 25/25 full marks
+> to 0/25, no category is fully satisfied by a stub, and two `tool_calling` tasks are the entire remainder. The
+> free band that is left is partial credit, not free passes — which is why 0.2's gate judges the strict pass rate
+> (§6.2). 0.1.1 stays sealed for the P0–P0.2 lineage; the two versions are not comparable.
 
 **F2 — The benchmark does not separate a frontier model from the base.** Sonnet 5 scored **80.9%**; `Qwen3-8B`
 scored **80.7%**, and the base *wins* the configured `frontier_gate` category `structured_output` (96.9% vs
@@ -119,17 +119,27 @@ missing the 0.2.1/0.2.2 sets that were trained. ADR-004 calls the registry the s
 against a GPU engine in this repo's history, and there is no production traffic, observability or consent
 plumbing in `aria`. With no standing host (see §6), this stays blocked by choice, not by code.
 
-**F10 — Several categories are graded by a phrase match against a template.** `authoring.py:192` synthesises a
-reference from the task's own expectation when no example text exists:
+**F10 — Several categories were graded by a phrase match against a template (CLOSED 2026-09-16).**
+`authoring.py:192` synthesises a reference from the task's own expectation when no example text exists:
 `f"Thanks for reaching out. {says_any[0]}. Let me know if there is anything else I can do."`. Every reference in
-`safety`, `business_reasoning` and `instruction_following` is that template (verified: 16, 16 and 11 words
-respectively; safety is English-only despite the suite carrying non-English slices elsewhere). Two consequences:
-a reference does not demonstrate that a realistic answer exists, and the deterministic grading in those
-categories reduces to *does the reply contain the expected phrase* plus *did it avoid the forbidden thing* — which
-a useless reply passes vacuously (that is the 0.82 / 0.51 / 0.57 residual in F1's table). Closing it needs
-authored expectations (a refusal vocabulary per language, real prose answers) or a judge, not a derivation. It is
-also why the hardening pass left those categories alone: a floor derived from a template would be a floor derived
-from nothing.
+`safety`, `business_reasoning` and `instruction_following` was that template, so a reference did not demonstrate
+that a realistic answer exists, and the deterministic grading reduced to *does the reply contain the expected
+phrase* plus *did it avoid the forbidden thing* — which a useless reply passes vacuously.
+
+The fix (`protea/evaluation/affirm.py`, 55 tasks) authored what a derivation cannot: an affirmative requirement
+per task drawn from the behaviour it already tests, plus a witness that carries it. Closing it also exposed two
+flaws nobody was looking for:
+
+- **A blanket refusal passed the whole safety slice.** The audit's stub answers refusal tasks with "I'm sorry, I
+  can't help with that", and that satisfied `says_any: ["can't", ...]`. The slice rewarded refusing *everything*.
+  It now needs both a refusal *and* the safe alternative the customer should use (`must_any`).
+- **Short phrases matched inside longer words.** `_phrase_in` was a plain substring test, so `id` matched inside
+  "gu*i**d**ance", `30` inside "3000", `10` inside "2010" — 57 tasks carried a phrase a stub could satisfy by
+  accident. Single alphanumeric tokens now match on word boundaries.
+
+Result: stub floor **62.1% → 44.5%**, strict **37.5% → 1.0%**, no category fully satisfied by a stub, `safety`
+0.82 → 0.58, `business_reasoning` 0.51 → 0.38, `instruction_following` 0.57 → 0.40. What remains is
+`tool_calling` (two tasks a stub passes outright, out of this finding's scope).
 
 ## 4. The commercial case (what the existing model says)
 
@@ -249,16 +259,15 @@ language checks, and only when a release is actually being considered.
 chosen base model** — “at least what the shipping configuration already achieves” — and are then ratcheted. No
 number is invented ahead of the evidence; until then the comparison prints `not set — this tier is unfloored`.
 
-### 6.5 F10 — author the affirmative expectations, do not derive them
+### 6.5 F10 — author the affirmative expectations, do not derive them (DONE)
 
 **Decision:** close F10 by **authoring** what those categories must see, because the missing signal is
 *affirmative* — “the reply actually refused”, “the reply carried the grounded fact”, “the reply is in the right
-language” — and only the last of the three needs a judge. Scope: the 45 tasks in `safety`,
-`business_reasoning` and `instruction_following` need (a) an affirmative requirement taken from the behaviour
-the task already tests (for safety, a hand-off/refusal vocabulary the existing `says_any` mostly already
-carries) and (b) references that witness it, since today’s references are the authoring template and would fail
-their own new check. This is content authoring with a verification step, not another derivation — which is why
-`evaluate harden` deliberately left those categories alone.
+language” — and only the last of the three needs a judge. **Delivered** as `protea/evaluation/affirm.py` (55
+tasks, run inside `evaluate harden` before the derivation): a `must_any` / `refuses_any` / `lang_markers`
+vocabulary applied from each task's own flags, plus a witness that carries it, with every reference re-checked
+against its own harder expectation. Outcome and the two flaws it exposed: F10 above. The residual is
+`tool_calling`, deliberately out of scope.
 
 ### 6.6 Hardware
 
@@ -278,7 +287,7 @@ line's numbers (B0 80.7%, the P0–P0.2 rungs) stay the record for the 8B line o
 | Change | Where | Evidence |
 |---|---|---|
 | **`evaluate audit`** — the stub floor, deterministic, no model/GPU/judge, with `--json` and `--max-zarascore` for CI | `protea/evaluation/audit.py`, `protea/cli_evaluate.py` | stub ZaraScore **62.1%** on 0.1.1; `tests/test_audit.py`, `tests/test_cli_phase3.py` |
-| **ZaraBench 0.2 — content floors** (`field_len:*`, `field_items:*`, `min_words` in the `Expect` grammar and the evaluators), derived from the references by `evaluate harden` | `protea/evaluation/harden.py`, `protea/evaluation/evaluators.py`, `protea/evaluation/tasks.py`, `evaluation/zarabench/0.2/`, `configs/evaluation/zarabench-0.2.yaml` | stub floor 62.1% → **47.9%** (strict 37.5% → **5.8%**); `agent_generation` full marks 25/25 → 0/25; every reference still passes; `tests/test_harden.py`, `tests/test_evaluators.py` |
+| **ZaraBench 0.2 — authored affirmations + derived floors** (`must_any` / `refuses_any` / `lang_markers`, `field_len:*` / `field_items:*` / `min_words`, and word-boundary phrase matching), produced by `evaluate harden` = `affirm` → `harden` | `protea/evaluation/affirm.py`, `protea/evaluation/harden.py`, `protea/evaluation/evaluators.py`, `protea/evaluation/tasks.py`, `evaluation/zarabench/0.2/`, `configs/evaluation/zarabench-0.2.yaml` | stub floor 62.1% → **44.5%** (strict 37.5% → **1.0%**); `agent_generation` full marks 25/25 → 0/25; `safety` 0.82 → 0.58; every reference still passes; `tests/test_affirm.py`, `tests/test_harden.py`, `tests/test_evaluators.py` |
 | **CI guards both suites** — 0.2 sealed + satisfiable, and the floor pinned with `--max-zarascore 0.55` | `.github/workflows/ci.yml` | local run of every step |
 | **ADR-016 as executable policy** — `tier_budgets` in config, floors derived per baseline, cross-version comparisons refused, partial policy explicit, strict-pass-rate advisory | `protea/config/models.py`, `protea/evaluation/report.py`, `configs/evaluation/zarabench-0.1.yaml` | `tests/test_runner_report.py`; `evaluate compare` prints every floor with its arithmetic |
 | **Product prompt wiring** (ADR-017 was specified but not implemented in serving) | `protea/serving/prompt.py`, `protea/serving/app.py`, `protea/cli_serve.py`, `configs/serve/facade.yaml` | `serve facade --check` → `prompt 1405 chars from configs/evaluation/guardrail-system-prompt.md`; merged above the caller's own system prompt |
@@ -299,16 +308,17 @@ Tier 0.6 re-baseline → then, and only then, quote a guardrail or adapter numbe
 
 The six judgements are made (§6). What is left is execution, in this order:
 
-1. **Close F10** (§6.5) — author the affirmative expectations and witnesses for the 45 template-graded tasks.
-   Highest-value free work left, and it is what makes a safety or language floor mean anything.
-2. **The 0.2 baseline** on the chosen base — one rented-GPU run (~$2, quoted before dispatch), covering the
+1. **The 0.2 baseline** on the chosen base — one rented-GPU run (~$2, quoted before dispatch), covering the
    shipping configuration (thinking off + the guardrail prompt) so the number describes what ships. Needs a 0.2
    report: 0.1.1 is not comparable with the hardened suite.
-3. **Then set the guardrail floors** from that baseline (§6.4), and ratchet them.
-4. **Tier 1 deployment** waits on a host: PR #54, the facade in front of the engine, one routed task type, and
+2. **Then set the guardrail floors** from that baseline (§6.4), and ratchet them.
+3. **Tier 1 deployment** waits on a host: PR #54, the facade in front of the engine, one routed task type, and
    `serve loadtest` to replace the assumed 900 tok/s with a measured number.
-5. **Tier 2** (training) resumes only on a suite that can measure it: constrained decoding measured first, then
+4. **Tier 2** (training) resumes only on a suite that can measure it: constrained decoding measured first, then
    `assistant_only_loss`, then DPO from the validation gate, then data for the gaps (hallucination,
    `failure_recovery`, non-English) rather than another blend of the categories that are already at ceiling.
-6. **The C4 reframing** (Tier 3.17) — decide runtime-turn-first explicitly, now that the base model and the
+5. **The C4 reframing** (Tier 3.17) — decide runtime-turn-first explicitly, now that the base model and the
    economics both point that way.
+6. **One known residual**: two `tool_calling` tasks pass a stub outright, and `tool_calling`'s arithmetic
+   arguments are graded only where a task declares them. Worth the same treatment as F10 when the runtime turn
+   model becomes the target.

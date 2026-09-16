@@ -14,7 +14,7 @@ ZaraBench is the Zara task suite inside Protea's generic evaluation framework (`
 | `protea evaluate run --provider <name> --confirm` | baseline of a real model; prints the pre-flight first | **yes** |
 | `protea evaluate compare candidate.json --base base.json --frontier frontier.json` | category table, release-gate decision, ADR-016 floors, kill criterion | no |
 | `protea evaluate audit` | score a **content-free stub** on the sealed suite: the floor of the instrument | no |
-| `protea evaluate harden` | derive content floors from a suite's references and write the next version (deterministic, refuses an unsatisfiable suite) | no |
+| `protea evaluate harden` | harden a suite: authored affirmative checks (`affirm`) then content floors derived from the new witnesses (`harden`); refuses an unsatisfiable suite | no |
 
 Reports land in `evaluation/reports/<suite>-<version>/<provider>-<model>-<run>.json|md`. Mock and reference reports are git-ignored; real baselines are committed.
 
@@ -60,9 +60,29 @@ What this means for interpretation: a ZaraScore above ~62% is not by itself evid
 
 > The related claim in `experiments/agent-generation-rootcause.md` — that six `agent_generation` tasks are unsatisfiable because their reference answers exceed the 4000-token budget — is **wrong** and carries a dated correction there. Those tasks are satisfied by a concise answer; the defect is that nothing in the category requires one.
 
-### ZaraBench 0.2 — content floors (2026-09-16)
+### ZaraBench 0.2 — content floors and affirmative checks (2026-09-16)
 
-0.2.0 is 0.1.1 plus content floors derived from each task's own reference by `protea evaluate harden`, which is deterministic and refuses to write a suite whose references no longer pass their own harder checks. The sealed 0.1.1 set is untouched, so the P0–P0.2 lineage stays comparable.
+0.2.0 is 0.1.1 hardened by `protea evaluate harden`, which runs two deterministic passes and refuses to write a
+suite whose references no longer pass their own harder checks:
+
+1. **`affirm`** (authored) — supplies what a derivation cannot: the requirements a *negative* check lacks, and a
+   witness that carries them. Three vocabulary-driven checks join the grammar — `must_any` (the reply must
+   contain one of these: the safe alternative offered to a customer who tried to hand over card details, the
+   emergency direction, the confirmation of an action), `refuses_any` (it must read as a refusal) and
+   `lang_markers` (it must be in the language the task asked for). Blanket boilerplate fails all three.
+2. **`harden`** (derived) — the length floors, now derived from the *new* witnesses because `affirm` runs first.
+
+The sealed 0.1.1 task set is untouched, so the P0–P0.2 lineage stays comparable in its task text; the *evaluators*
+are shared code, so quote 0.1.1 numbers as published rather than re-measuring them against today's code (the
+stub floor re-measures at 61.8% today, against 62.1% when measured). Two evaluator fixes landed with 0.2:
+
+- **Phrase matching is word-boundary aware for single alphanumeric tokens.** It used to be a plain substring
+  test, so `id` matched inside "gu*i**d**ance", `30` inside "3000" and `10` inside "2010" — 57 tasks carried a
+  phrase the stub could satisfy by accident. Phrases with spaces or punctuation (`8 op hande`, `can't`, `$194`)
+  behave as before.
+- **A derived floor can never exceed the reference's own length**, which is what keeps the suite satisfiable by
+  construction — the original 80-character floor made a legitimate 51-character `next_step` unpassable, and the
+  reference check caught it.
 
 The floors (all derived, none hand-typed):
 
@@ -72,14 +92,39 @@ The floors (all derived, none hand-typed):
 | `field_items:<path>` | a list field with ≥ 1 reference item needs ≥ 1 item | an empty `tools: []` is not a plan |
 | `min_words` | a prose reference ≥ 24 words sets ≥ 12 words (never more than the reference itself) | a two-word refusal reference keeps a two-word floor, so a correct terse refusal is not punished |
 
-**Result: the stub floor falls from 62.1% to 47.9%, and the strict floor from 37.5% to 5.8%.** `agent_generation` goes from 25/25 full marks to 0/25 (mean 1.00 → 0.61), `structured_output` from 25/32 to 0/32, and no category is fully satisfied by a stub any more.
+**Result: the stub floor falls from 62.1% to 44.5%, and the strict floor from 37.5% to 1.0%.** No category is
+fully satisfied by a stub any more, `agent_generation` goes from 25/25 full marks to 0/25, `safety` from 0.82 to
+0.58, `business_reasoning` from 0.51 to 0.38, and two `tool_calling` tasks are the entire remainder that a stub
+passes outright.
 
-Two honest limits:
+| Category | Weight | 0.1.1 stub | 0.2 stub |
+|---|---|---|---|
+| agent_generation | 0.20 | 1.00 | 0.61 |
+| structured_output | 0.15 | 0.89 | 0.74 |
+| tool_calling | 0.15 | 0.28 | 0.28 |
+| business_reasoning | 0.10 | 0.51 | 0.38 |
+| connector_selection | 0.10 | 0.35 | 0.30 |
+| workflow_generation | 0.10 | 0.50 | 0.25 |
+| safety | 0.05 | 0.82 | 0.58 |
+| failure_recovery | 0.05 | 0.68 | 0.52 |
+| hallucination | 0.05 | 0.10 | 0.07 |
+| instruction_following | 0.05 | 0.57 | 0.40 |
+| **Stub ZaraScore** | | **62.1%** | **44.5%** |
+| **Stub, strict** | | **37.5%** | **1.0%** |
 
-- **These are floors, not quality bars.** A padding model satisfies every one of them, and none reads for truth. Their job is to shrink the free band so a score difference means something; the judge (ADR-007) is still the path to grading content.
-- **The remaining 47.9% is not a derivation problem.** It sits in the categories whose deterministic checks are "did not do the forbidden thing" (a useless reply passes those vacuously) and whose judge checks are skipped: `safety` 0.82, `instruction_following` 0.57, `business_reasoning` 0.51. Closing those needs authored expectations (a refusal vocabulary per language, realistic answers) or a judge — see `evaluation-review.md` F10.
+Three honest limits:
 
-Because partial credit is still shape-dominated on 0.2, **quote the strict pass rate** (`zarascore_strict`) alongside the score for any 0.2 comparison, and note it next to the run's floor (see `evaluate audit`).
+- **These are floors, not quality bars.** A padding model satisfies every one of them, and none reads for truth.
+  Their job is to shrink the free band so a score difference means something; the judge (ADR-007) is still the
+  path to grading content.
+- **Witnesses are witnesses.** The authored references prove the checks are satisfiable — they are plausible
+  minimal answers with the required content, not gold answers, and no training data is derived from them.
+- **`lang_markers` shows the reply is *in* a language, not that it is fluent in it.** The judge-scored `lang`
+  check stays on those tasks and remains the release-time path; the markers exist so that a reply which is not in
+  the language at all cannot pass.
+
+Because partial credit is still shape-dominated on 0.2 (44.5% against a 1.0% strict floor), **quote the strict
+pass rate** (`zarascore_strict`) for any 0.2 comparison, and note it next to the run's floor (`evaluate audit`).
 
 ### The release gate
 
@@ -163,10 +208,14 @@ sandbox. Set `PROTEA_ANTHROPIC_API_KEY` (or `PROTEA_OPENAI_API_KEY`) there inste
 
 ## Changelog
 
-- **0.2.0 (2026-09-16)** — content floors derived from the references by `evaluate harden` (`field_len:*`,
-  `field_items:*`, `min_words`), added to close the stub hole measured on 0.1.1 (62.1% → 47.9%; strict 37.5% →
-  5.8%). The task text, prompts and expectations are otherwise identical to 0.1.1; only the floors are new, and
-  0.1.1 stays sealed for the P0–P0.2 lineage. Reports from the two versions are **not** comparable.
+- **0.2.0 (2026-09-16)** — the stub hole on 0.1.1 (62.1% overall, 1.00 on every `agent_generation` task) is
+  closed by three changes: authored affirmative checks (`must_any` / `refuses_any` / `lang_markers`, with 55
+  witnesses rewritten so a blanket refusal or a placeholder object fails — `affirm`), content floors derived from
+  those witnesses (`field_len:*` / `field_items:*` / `min_words` — `harden`), and word-boundary phrase matching
+  for single alphanumeric tokens. Stub floor **62.1% → 44.5%**, strict **37.5% → 1.0%**; no category fully
+  satisfied; two `tool_calling` tasks remain. Prompts are untouched and 0.1.1 stays sealed, but the evaluators are
+  shared code, so 0.1.1 numbers are quotable only as published. Reports from the two versions are **not**
+  comparable.
 - **gate and instrument (2026-09-16, no task-set change)** — the gate now executes ADR-016: `tier_budgets` in the
   config are the single source, per-category floors are derived from whichever baseline is passed, the strict
   pass rate is reported as a non-blocking advisory, and a `partial` report needs
