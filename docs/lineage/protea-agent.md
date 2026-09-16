@@ -187,3 +187,51 @@ Hallucination = a **training** effect the prompt can't touch (base+prompt 28.9% 
   **P0.2** (the trimmed 0.2.2 recipe) is the first test of that gate; an adapter ships only if it clears it.
 - Follow-ups: validate thinking-off on the reasoning-heavy categories before locking the serve config; harden the
   product prompt against the canary-echo failure Exp 0 surfaced.
+
+## P0.2 — the trimmed recipe (2026-09-15): fails the gate, program paused
+
+`configs/training/protea-agent-8b-qlora-0.2.2.yaml` — the 0.2.1 blend after `dataset trim` (guardrails/system_prompt
+capped at 800 chars, 58 off-taxonomy commerce/sales rows dropped → 1,211 rows), **epochs 3→1**. Training was clean
+(train_loss 1.05, eval_loss 0.56, token-acc 87%, seed 42; adapter
+`checkpoints/protea-agent-0.2.2/protea-agent-0.2.2-qwen3-8b-qlora/20260915T044227Z/adapter`). Scored on the full
+sealed 206-task suite (run `20260915T100114Z`).
+
+| Category | Tier | Budget | B0 | P0.1 | **P0.2** | Δ(B0→P0.2) |
+|---|---|---|---|---|---|---|
+| agent_generation | priority | 0.02 | 73.7% | 56.0% | **41.1%** | **−32.6 ❌** |
+| structured_output | frontier_gate | 0.00 | 96.9% | 92.6% | 93.2% | −3.7 ❌ |
+| tool_calling | priority | 0.02 | 84.4% | 79.4% | 78.9% | −5.5 ❌ |
+| connector_selection | priority | 0.02 | 84.5% | 84.2% | 91.0% | +6.5 ✅ |
+| workflow_generation | supporting | 0.05 | 89.2% | 85.8% | 100.0% | +10.8 ✅ |
+| business_reasoning | supporting | 0.05 | 85.6% | 86.7% | 81.1% | −4.5 ❌ |
+| failure_recovery | supporting | 0.05 | 72.2% | 22.2% | **23.3%** | **−48.9 ❌** |
+| safety | guardrail | 0.00 | 72.1% | 83.3% | 85.0% | +12.9 ✅ |
+| hallucination | guardrail | 0.00 | 34.4% | 80.0% | **53.3%** | **+18.9 ✅** |
+| instruction_following | supporting | 0.05 | 77.5% | 69.2% | 74.2% | −3.3 ❌ |
+| **Overall** | — | — | **80.7%** | **75.4%** | **73.0%** | **−7.7** |
+
+### Verdict against the ADR-017 gate: FAIL (no adapter ships)
+
+hallucination ↑ vs base ✅, but **agent_generation −32.6 ❌** and **failure_recovery −48.9 ❌**. P0.2 is the **worst
+rung yet** (73.0% < P0.1 75.4% < B0 80.7%). v0 stays **base + guardrail prompt** (ADR-017).
+
+### The trim hypothesis is falsified
+
+The trim was offline-verified to remove **100%** of the 4000-token budget overflows — yet **agent_generation got
+*worse*, not better** (56→41), with `json_parsable` (15) and `field:category` (13) still the top agent_gen failures.
+So truncation was **not the (whole) cause**; the model emits malformed JSON and wrong field values for reasons length
+doesn't explain. And epochs 3→1 **weakened the one target we wanted** — hallucination fell 80→53. The evidence shows
+a real tension: the synthetic framing needs *more* epochs to imprint (hallucination), but more epochs cause
+catastrophic forgetting (failure_recovery). That is a **dataset/method problem, not a tunable**.
+
+Caveats: the eval config hash shifted `e53b…`→`4bf0…` because PR #60 added a nullable `system_prompt` field to
+`EvaluationConfig` — but the **task set is byte-identical** (`095d5209d265`) and generation params are unchanged, so
+the comparison holds. `sw 0.0%` is 1–2 tasks (noise).
+
+### Program status: QLoRA agent-adapter program paused
+
+Three data experiments (P0, P0.1, P0.2) all lose to base, and the targeted trim fix failed. No blend ratio, trim, or
+epoch count is closing the gap. **`base + guardrail prompt` is the v0 product.** A shippable adapter needs a
+fundamentally different input — a materially cleaner agent_generation dataset (correct fields, not just shorter), or
+a scope + method change (hallucination-only clean data, `assistant_only_loss` to curb forgetting) — **not** a fourth
+blend. Next effort pivots to serving base+prompt (ADR-017), not another training run.
