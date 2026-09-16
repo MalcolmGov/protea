@@ -47,7 +47,10 @@ PER_CATEGORY="${PROTEA_EVAL_PER_CATEGORY:-2}"
 # PROTEA_* vars, and the :-2 default above would re-fill 2 — so a non-empty sentinel is the only way to ask for
 # the full suite through the workflow (this is what made both B0 runs a 20-task sample).
 case "$PER_CATEGORY" in full|all|0|"") PER_CATEGORY="" ;; esac
-MAX_MINUTES="${PROTEA_MAX_RUNTIME_MINUTES:-60}"
+# The launcher sets PROTEA_MAX_RUNTIME_MINUTES from the *training* config's budget (300 min), which has nothing to
+# do with how long an eval needs — inherited blindly, a wedged run burns the whole training budget. The eval's own
+# cap (PROTEA_EVAL_MAX_MINUTES) takes precedence when set.
+MAX_MINUTES="${PROTEA_EVAL_MAX_MINUTES:-${PROTEA_MAX_RUNTIME_MINUTES:-60}}"
 
 # Read configs/tasks from the repo (world-readable), but WRITE only under a writable base: $WORKDIR
 # (/workspace/protea) is root-owned and the image runs as the unprivileged `protea` user, so writing the adapter
@@ -55,6 +58,21 @@ MAX_MINUTES="${PROTEA_MAX_RUNTIME_MINUTES:-60}"
 # Same class of bug as the training entrypoint's log dir; keep all scratch under /tmp (always writable here).
 cd "$WORKDIR"
 WORKBASE="${PROTEA_EVAL_WORKBASE:-/tmp/protea/eval}"
+
+# Fail fast when the host has no working GPU. Only the GPU is being rented, and a torch that cannot see CUDA runs
+# the suite on the CPU instead: on 2026-09-16 a community host did exactly that ("CUDA unknown error ... setting
+# the available devices to zero"), the first task took 56 minutes instead of seconds, and the ETA read 193 hours
+# against a billing cap of hours. Checked before the model load, so a bad host costs a minute rather than the run.
+if ! python -c '
+import sys
+import torch
+ok = torch.cuda.is_available()
+print("device:", torch.cuda.get_device_name(0) if ok else "no CUDA device visible")
+sys.exit(0 if ok else 1)
+'; then
+  echo "protea-eval: refusing to score on CPU — this host cannot see CUDA (device line above)"
+  exit 3
+fi
 
 export PROTEA_LOCAL_MODEL="$BASE_MODEL"
 export PROTEA_LOCAL_REVISION="$BASE_REVISION"

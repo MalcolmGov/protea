@@ -259,6 +259,11 @@ def test_eval_entrypoint_is_shipped_and_scores_local(catalogue):
     # The full suite must be reachable: an empty per_category is dropped by the launcher and re-filled to 2 by the
     # entrypoint's :-2 default, so a non-empty sentinel ("full"/"all"/"0") is the only way to ask for all tasks.
     assert "full|all|0" in body
+    # A host without CUDA must be refused before the model load: on 2026-09-16 a community pod ran the suite on the
+    # CPU (the first task took 56 minutes, the ETA read 193 hours) and would have burned its whole billing cap.
+    assert "torch.cuda.is_available()" in body and "refusing to score on CPU" in body
+    # ...and the eval must not inherit the training budget as its own runtime cap.
+    assert "PROTEA_EVAL_MAX_MINUTES" in body
     # The adapter is optional: with a key -> base+LoRA; without -> the bare pinned base (the B0 baseline).
     assert 'if [ -n "${PROTEA_ADAPTER_KEY:-}" ]' in body
     assert "B0" in body  # the bare-base branch is labelled as the baseline

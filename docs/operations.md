@@ -53,3 +53,12 @@ cloud provider except the GPU host itself.
 | Fallback rate rising | provider errors on `/metrics` (`protea_backend_errors_total`); check the frontier provider status and keys |
 | Cost spike | aria summary `by_model` cost; a fallback storm sends Protea traffic to frontier models — roll back and investigate |
 | Suspected data leak in answers | run `security run --provider protea` against the served model; roll back on any family below the floor |
+| Eval pod crawling (first task ~an hour, ETA in the hundreds of hours) | the host cannot see CUDA and torch fell back to the CPU — terminate the pod, then re-dispatch on a **secure** target (`configs/remote/runpod-l40s.yaml`). The entrypoint refuses a GPU-less host in about a minute now and logs `device: no CUDA device visible`, so this costs a minute rather than the run |
+
+> **Eval dispatch notes (2026-09-16).** Two failure modes each cost a run before they were fixed. A *community*
+> host that could not see CUDA — torch fell back to the CPU silently, the first task took 56 minutes, and the run's
+> own ETA read 193 hours; and an eval that inherited the **training** config's runtime budget (300 min) as its own
+> cap. Now: the entrypoint refuses a GPU-less host before the model load, and the eval's cap comes from
+> `PROTEA_EVAL_MAX_MINUTES` (workflow input `eval_max_minutes`, default 120). Prefer secure targets for a run that
+> must complete. For calibration, a healthy host scores the full 206-task suite for an 8B in ~1h06m
+> (`eval-reports/20260915T085509Z/`), so a 4B should land in ~35–45 minutes.
