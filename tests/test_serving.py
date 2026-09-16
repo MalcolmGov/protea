@@ -9,6 +9,7 @@ from protea.schemas.generation import GenerationRequest, ToolCall
 from protea.serving.app import create_app
 from protea.serving.config import ServeConfig
 from protea.serving.gate import parse_and_validate
+from protea.serving.ratelimit import RateLimiter, build_limiter
 
 SCHEMA = {"type": "object", "properties": {"lane": {"type": "string"}}, "required": ["lane"]}
 AUTH = {"authorization": "Bearer secret"}
@@ -132,6 +133,79 @@ def test_provider_errors_and_draining():
         assert "protea_backend_errors_total" in client.get("/metrics").text
         client.app.state.facade.draining = True
         assert client.get("/healthz").status_code == 503
+
+
+GUARD = "GUARDRAIL: never invent facts"
+
+
+def test_system_prompt_overlay_merges_with_caller_system_message():
+    mock = MockProvider(["ok"])
+    client, mock = _client(mock, system_prompt=GUARD)
+    with client:
+        body = {
+            "model": "protea-agent",
+            "messages": [
+                {"role": "system", "content": "You are Acme's booking agent."},
+                {"role": "user", "content": "hi"},
+            ],
+        }
+        assert client.post("/v1/chat/completions", json=body, headers=AUTH).status_code == 200
+        assert mock.requests[-1].messages[0].content == f"{GUARD}\n\nYou are Acme's booking agent."
+        assert mock.requests[-1].messages[1].role == "user"
+
+        bare = {"model": "protea-agent", "messages": [{"role": "user", "content": "hi"}]}
+        client.post("/v1/chat/completions", json=bare, headers=AUTH)
+        assert mock.requests[-1].messages[0].content == GUARD
+
+        already = {
+            "model": "protea-agent",
+            "messages": [{"role": "system", "content": GUARD}, {"role": "user", "content": "hi"}],
+        }
+        client.post("/v1/chat/completions", json=already, headers=AUTH)
+        assert mock.requests[-1].messages[0].content == GUARD  # never doubled
+
+
+def test_system_prompt_file_wins_and_missing_file_fails_fast(tmp_path):
+    path = tmp_path / "guardrail.md"
+    path.write_text(GUARD + "\n", encoding="utf-8")
+    mock = MockProvider(["ok"])
+    client, mock = _client(mock, system_prompt="ignored", system_prompt_file=str(path))
+    with client:
+        body = {"model": "protea-agent", "messages": [{"role": "user", "content": "hi"}]}
+        assert client.post("/v1/chat/completions", json=body, headers=AUTH).status_code == 200
+        assert mock.requests[-1].messages[0].content == GUARD
+    with pytest.raises(ValueError, match="does not exist"):
+        create_app(
+            ServeConfig(backend="mock", system_prompt_file=str(tmp_path / "nope.md")), MockProvider(), token="secret"
+        )
+
+
+def test_rate_limit_throttles_v1_and_leaves_ops_open():
+    client, _ = _client(rate_limit_rpm=60, rate_limit_burst=2)
+    body = {"model": "protea-agent", "messages": [{"role": "user", "content": "hi"}]}
+    headers = {**AUTH, "x-protea-tenant": "acme"}
+    with client:
+        assert client.post("/v1/chat/completions", json=body, headers=headers).status_code == 200
+        assert client.post("/v1/chat/completions", json=body, headers=headers).status_code == 200
+        third = client.post("/v1/chat/completions", json=body, headers=headers)
+        assert third.status_code == 429
+        assert int(third.headers["retry-after"]) >= 1
+        assert third.json()["error"] == "rate limit exceeded"
+        # ops endpoints stay reachable, the ceiling is per caller, and the throttle is visible in metrics
+        assert client.get("/readyz").status_code == 200
+        assert "protea_rate_limited_total" in client.get("/metrics").text
+        other = {**AUTH, "x-protea-tenant": "other-co"}
+        assert client.post("/v1/chat/completions", json=body, headers=other).status_code == 200
+
+
+def test_rate_limiter_refills_over_time():
+    now = [0.0]
+    limiter = RateLimiter(rpm=60, burst=1, clock=lambda: now[0])
+    assert limiter.check("acme")[0] is True
+    assert limiter.check("acme")[0] is False
+    now[0] = 1.0  # one second buys exactly one token at 60 rpm
+    assert limiter.check("acme")[0] is True
+    assert build_limiter(None) is None
 
 
 def test_parse_and_validate_reports_paths():
