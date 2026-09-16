@@ -131,7 +131,8 @@ class InferenceConfig(BaseModel):
 class CategoryWeight(BaseModel):
     name: str
     weight: float
-    min_score: float = 0.0  # release gate threshold for this category
+    min_score: float | None = None  # absolute floor; unset = governed by the ADR-016 tier budget below
+    tier: str | None = None  # ADR-016 tier: frontier_gate | priority | guardrail | supporting
 
 
 class TokenPrice(BaseModel):
@@ -139,6 +140,19 @@ class TokenPrice(BaseModel):
 
     input: float
     output: float
+
+
+class CategoryFloor(BaseModel):
+    """A category's ADR-016 floor, with the arithmetic that produced it, for report reasons."""
+
+    category: str
+    tier: str
+    budget: float
+    base: float
+    floor: float
+
+    def describe(self) -> str:
+        return f"base {self.base * 100:.1f}% − {self.budget * 100:.0f}% {self.tier} budget"
 
 
 class EvaluationConfig(BaseModel):
@@ -150,7 +164,20 @@ class EvaluationConfig(BaseModel):
     judge_provider: str | None = None
     judge_model: str | None = None
     judge_must_differ_from_generator: bool = True
-    release_min_zarascore: float = 0.0
+    # ADR-016 budgets, per category tier: the most a category may fall below the frozen baseline. These are the
+    # gate; per-category floors are derived from them at compare time (see `category_floors`). Kept equal to
+    # `docs/capability-spec.yaml::regression_budgets` by a test — the spec is the policy, this is the execution.
+    tier_budgets: dict[str, float] = Field(
+        default_factory=lambda: {"frontier_gate": 0.0, "priority": 0.02, "guardrail": 0.0, "supporting": 0.05}
+    )
+    # ADR-014: a guardrail tier is graded against an ABSOLUTE floor, never "≥ base" — a base that was already
+    # unsafe is not a licence to ship unsafe. Those categories therefore take their floor from `min_score` alone
+    # (set it, or the comparison says loudly that the tier is unfloored) and are never derived from the baseline.
+    absolute_tiers: list[str] = Field(default_factory=lambda: ["guardrail"])
+    # A report with skipped judge checks covers less of the surface than it claims, so it cannot release unless
+    # this is knowingly relaxed (the decision then records the uncovered weight as an advisory instead).
+    require_complete_report_for_release: bool = True
+    release_min_zarascore: float = 0.0  # per-category floors are the gate; an aggregate floor is redundant
     latency_budget_ms: int | None = None
     priority_categories: list[str] = Field(
         default_factory=lambda: ["agent_generation", "structured_output", "tool_calling", "connector_selection"]
@@ -175,16 +202,44 @@ class EvaluationConfig(BaseModel):
         total = sum(c.weight for c in self.categories)
         if abs(total - 1.0) > 1e-6:
             raise ValueError(f"category weights must sum to 1.0 (got {total:.4f})")
+        unknown = sorted({c.tier for c in self.categories if c.tier and c.tier not in self.tier_budgets})
+        if unknown:
+            raise ValueError(f"unknown category tier(s) {unknown}; known: {sorted(self.tier_budgets)}")
         return self
 
     def zarascore(self, scores: dict[str, float]) -> float:
         return sum(c.weight * scores.get(c.name, 0.0) for c in self.categories)
 
     def failed_gates(self, scores: dict[str, float]) -> list[str]:
-        failed = [c.name for c in self.categories if scores.get(c.name, 0.0) < c.min_score]
+        """Absolute floors only (run-time: no baseline is available yet — ADR-016 budgets are applied by
+        `release_decision` at compare time, where the baseline report is in hand)."""
+        failed = [
+            c.name for c in self.categories if c.min_score is not None and scores.get(c.name, 0.0) < c.min_score
+        ]
         if self.zarascore(scores) < self.release_min_zarascore:
             failed.append("zarascore")
         return failed
+
+    def unfloored_absolute_categories(self) -> list[str]:
+        """Categories whose tier demands an absolute floor (ADR-014) but which have no `min_score` set."""
+        return [c.name for c in self.categories if c.tier in self.absolute_tiers and c.min_score is None]
+
+    def category_floors(self, base_scores: dict[str, float]) -> dict[str, CategoryFloor]:
+        """The floor a tiered category may not fall below: `base − tier budget`, derived per baseline.
+
+        Deriving rather than hard-coding is the point: the same config gates the 8B baseline, a smaller base or
+        the next re-baseline without anyone re-typing ten numbers, and a floor can never drift from the baseline
+        it was computed against. Categories with no tier, or missing from the baseline, are not floored this way.
+        """
+        floors: dict[str, CategoryFloor] = {}
+        for c in self.categories:
+            if not c.tier or c.tier in self.absolute_tiers or c.name not in base_scores:
+                continue
+            budget = self.tier_budgets.get(c.tier, 0.0)
+            floors[c.name] = CategoryFloor(
+                category=c.name, tier=c.tier, budget=budget, base=base_scores[c.name], floor=base_scores[c.name] - budget
+            )
+        return floors
 
 
 class StorageSpec(BaseModel):

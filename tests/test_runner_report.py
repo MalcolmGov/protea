@@ -8,8 +8,15 @@ from protea.evaluation.driver import CannedResults, DriveOptions, drive_conversa
 from protea.evaluation.evaluators import evaluate
 from protea.evaluation.judge import apply_judge, check_independence
 from protea.evaluation.reference import ReferenceProvider
-from protea.evaluation.report import load_report, release_decision, render_comparison, render_markdown, write_report
-from protea.evaluation.runner import estimate_cost, preflight, run_benchmark
+from protea.evaluation.report import (
+    judge_coverage,
+    load_report,
+    release_decision,
+    render_comparison,
+    render_markdown,
+    write_report,
+)
+from protea.evaluation.runner import BenchmarkReport, CategoryScore, estimate_cost, preflight, run_benchmark
 from protea.evaluation.tasks import Category, EvalTask, Expect, Reference, load_tasks, write_tasks
 from protea.providers.mock import MockProvider
 from protea.schemas.generation import GenerationRequest, Message, ToolCall, ToolSchema
@@ -150,6 +157,111 @@ async def test_reports_roundtrip_compare_and_decisions(tmp_path: Path):
     assert "different task sets" in release_decision(cfg, frontier, other, None).reasons[0]
     good = release_decision(cfg, frontier.model_copy(update={"partial": False}), None, None)
     assert good.release
+
+
+TIERS = {"frontier_gate": 0.0, "priority": 0.02, "guardrail": 0.0, "supporting": 0.05}
+
+
+def _tiered_cfg(**kw) -> EvaluationConfig:
+    tiers = {
+        "agent_generation": "priority",
+        "structured_output": "priority",
+        "tool_calling": "priority",
+        "connector_selection": "priority",
+        "failure_recovery": "supporting",
+        "hallucination": "guardrail",
+    }
+    cats = [CategoryWeight(name=n, weight=1 / len(tiers), tier=t) for n, t in tiers.items()]
+    return EvaluationConfig(suite="zarabench", version="0.1.0", categories=cats, tier_budgets=TIERS, **kw)
+
+
+def _report(
+    cfg: EvaluationConfig,
+    scores: dict[str, float],
+    pass_rates: dict[str, float] | None = None,
+    *,
+    partial: bool = False,
+    judge_skipped: int = 0,
+) -> BenchmarkReport:
+    cats = [
+        CategoryScore(
+            name=c.name,
+            n=10,
+            score=scores[c.name],
+            pass_rate=(pass_rates or {}).get(c.name, scores[c.name]),
+            judge_skipped=judge_skipped,
+        )
+        for c in cfg.categories
+    ]
+    return BenchmarkReport(
+        suite=cfg.suite,
+        version=cfg.version,
+        run_id="r",
+        created_at="2026-09-16T00:00:00+00:00",
+        provider="mock",
+        model="mock-1",
+        categories=cats,
+        zarascore=cfg.zarascore(scores),
+        partial=partial,
+    )
+
+
+def test_category_floor_is_base_minus_the_adr_016_tier_budget():
+    cfg = _tiered_cfg()
+    base = _report(cfg, {c.name: 0.9 for c in cfg.categories})
+    floors = cfg.category_floors(base.category_scores())
+    assert floors["failure_recovery"].floor == pytest.approx(0.85)  # supporting: 0.05 of headroom
+    assert floors["agent_generation"].tier == "priority"
+    # ADR-014: a guardrail is graded absolutely, so it never takes a derived floor — and says so when unset
+    assert "hallucination" not in floors
+    assert "hallucination" in cfg.unfloored_absolute_categories()
+    assert "hallucination" not in cfg.model_copy(update={"absolute_tiers": []}).unfloored_absolute_categories()
+    assert "supporting budget" in floors["failure_recovery"].describe()
+    # a tier the budgets do not define is a config error, not a silent default
+    bad = [CategoryWeight(name="x", weight=1.0, tier="made-up")]
+    with pytest.raises(ValueError, match="unknown category tier"):
+        EvaluationConfig(suite="zarabench", version="0.1.0", categories=bad)
+
+
+def test_tier_budget_blocks_a_regression_the_weighted_mean_hides():
+    cfg = _tiered_cfg()
+    base = _report(cfg, {c.name: 0.9 for c in cfg.categories})
+    dropped = {c.name: 0.9 for c in cfg.categories}
+    dropped["failure_recovery"] = 0.8  # −10 on one supporting category the aggregate barely notices
+    decision = release_decision(cfg, _report(cfg, dropped), base=base, frontier=None)
+    assert not decision.release
+    assert any("failure_recovery" in r and "ADR-016" in r for r in decision.reasons)
+    within = {c.name: 0.9 for c in cfg.categories}
+    within["failure_recovery"] = 0.86
+    assert release_decision(cfg, _report(cfg, within), base=base, frontier=None).release
+
+
+def test_partial_report_cannot_release_until_the_config_allows_it():
+    cfg = _tiered_cfg()
+    base = _report(cfg, {c.name: 0.9 for c in cfg.categories})
+    candidate = _report(cfg, {c.name: 0.9 for c in cfg.categories}, partial=True, judge_skipped=5)
+    decision = release_decision(cfg, candidate, base=base, frontier=None)
+    assert not decision.release
+    assert any("partial" in r for r in decision.reasons)
+    relaxed = cfg.model_copy(update={"require_complete_report_for_release": False})
+    accepted = release_decision(relaxed, candidate, base=base, frontier=None)
+    assert accepted.release  # knowingly accepted, and recorded
+    assert any("judge check" in a for a in accepted.advisories)
+    assert "scored on deterministic checks only" in judge_coverage(cfg, candidate)
+    assert candidate.judge_skipped_total == 5 * len(cfg.categories)
+
+
+def test_pass_rate_regression_is_advisory_and_never_blocks():
+    cfg = _tiered_cfg()
+    level = {c.name: 0.9 for c in cfg.categories}
+    base = _report(cfg, level, pass_rates=dict(level))
+    candidate = _report(cfg, level, pass_rates={**level, "tool_calling": 0.3})
+    decision = release_decision(cfg, candidate, base=base, frontier=None)
+    assert decision.release  # the score is identical, so nothing blocks...
+    assert any("pass rate" in a and "tool_calling" in a for a in decision.advisories)  # ...but it is flagged
+    table = render_comparison(cfg, {"candidate": candidate, "base": base}, decision)
+    assert "Advisory" in table
+    assert "ADR-016 floors" in table
 
 
 def test_task_file_roundtrip_and_duplicate_ids(tmp_path: Path):

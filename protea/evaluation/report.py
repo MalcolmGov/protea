@@ -76,8 +76,27 @@ def load_report(path: Path) -> BenchmarkReport:
 class Decision(BaseModel):
     release: bool
     reasons: list[str] = Field(default_factory=list)
+    advisories: list[str] = Field(default_factory=list)  # non-blocking: worth reading, not a gate
     kill_recommended: bool = False
     kill_reason: str = ""
+
+
+def judge_coverage(cfg: EvaluationConfig, report: BenchmarkReport) -> str:
+    """How much of a report's surface is unmeasured because judge checks could not run.
+
+    Weights live in the config, not in the report, so both are needed to say how much of the score stands on
+    deterministic checks alone — the number that decides whether a judge-free result is quotable.
+    """
+    skipped = report.judge_skipped_total
+    if not skipped:
+        return "no judge checks skipped"
+    weights = {c.name: c.weight for c in cfg.categories}
+    weight = sum(weights.get(c.name, 0.0) for c in report.categories if c.judge_skipped)
+    cats = sum(1 for c in report.categories if c.judge_skipped)
+    return (
+        f"{skipped} judge check(s) skipped in {cats} categor{'y' if cats == 1 else 'ies'}"
+        f" — {weight:.0%} of the weight is scored on deterministic checks only"
+    )
 
 
 def _comparable(a: BenchmarkReport, b: BenchmarkReport) -> list[str]:
@@ -92,21 +111,55 @@ def _comparable(a: BenchmarkReport, b: BenchmarkReport) -> list[str]:
 def release_decision(
     cfg: EvaluationConfig, candidate: BenchmarkReport, base: BenchmarkReport | None, frontier: BenchmarkReport | None
 ) -> Decision:
-    """Roadmap §4 gate: ≥ base on every priority category, ≥ frontier on the frontier-gate categories, config gates."""
+    """Roadmap §4 gate + the ADR-016 budgets, applied per category.
+
+    Blocking checks: comparability of the reports, ≥ base on every priority category, ≥ frontier on the
+    frontier-gate categories, `base − tier budget` floors for every other tiered category, config gates, and a
+    complete (non-partial) candidate report unless the config knowingly allows otherwise.
+    Advisory (never blocks): a strict pass rate below base's — a mean can rise while hard failures grow, which is
+    what made the P0.1 anomaly (pass rate up, mean down) look like progress.
+    """
     reasons: list[str] = []
+    advisories: list[str] = []
     cand = candidate.category_scores()
     for other in (base, frontier):
         if other is not None:
             reasons.extend(_comparable(candidate, other))
     if candidate.partial:
-        reasons.append("candidate report is partial (judge checks skipped)")
+        note = f"candidate report is partial ({judge_coverage(cfg, candidate)})"
+        advisories.append(note)
+        if cfg.require_complete_report_for_release:
+            reasons.append(note + "; judge the run or set require_complete_report_for_release: false to accept it")
     if base is not None:
         bs = base.category_scores()
+        bs_pass = base.category_pass_rates()
+        cand_pass = candidate.category_pass_rates()
         reasons.extend(
             f"{c}: candidate {_fmt(cand.get(c, 0))} < base {_fmt(bs.get(c, 0))}"
             for c in cfg.priority_categories
             if cand.get(c, 0.0) < bs.get(c, 0.0)
         )
+        # ADR-016 budgets for the categories the priority rule does not already hold at ≥ base.
+        for name, spec in cfg.category_floors(bs).items():
+            if name in cfg.priority_categories:
+                continue  # held at ≥ base above, which is stricter than any budget
+            score = cand.get(name, 0.0)
+            if score < spec.floor:
+                reasons.append(
+                    f"{name}: candidate {_fmt(score)} < floor {_fmt(spec.floor)} ({spec.describe()}) [ADR-016]"
+                )
+        advisories.extend(
+            f"{c.name}: strict pass rate {_fmt(cand_pass.get(c.name))} < base {_fmt(bs_pass.get(c.name))}"
+            f" — the mean may be hiding hard failures (check the failure modes)"
+            for c in cfg.categories
+            if c.name in bs_pass and c.name in cand_pass and cand_pass[c.name] + 0.02 < bs_pass[c.name]
+        )
+        unfloored = cfg.unfloored_absolute_categories()
+        if unfloored:
+            advisories.append(
+                f"no absolute floor set for {', '.join(unfloored)}: ADR-014 grades these tiers against an absolute "
+                "floor, not against the baseline — set `min_score` on those categories"
+            )
     if frontier is not None:
         fs = frontier.category_scores()
         reasons.extend(
@@ -115,7 +168,7 @@ def release_decision(
             if cand.get(c, 0.0) < fs.get(c, 0.0)
         )
     reasons.extend(f"config gate failed: {g}" for g in candidate.failed_gates)
-    decision = Decision(release=not reasons, reasons=reasons)
+    decision = Decision(release=not reasons, reasons=reasons, advisories=advisories)
     if frontier is not None and frontier.zarascore > 0:
         floor = cfg.kill_fraction_of_frontier * frontier.zarascore
         if candidate.zarascore < floor:
@@ -144,9 +197,26 @@ def render_comparison(cfg: EvaluationConfig, reports: dict[str, BenchmarkReport]
         )
         + " |"
     )
+    if any(r.partial for r in reports.values()):
+        lines.append("| judge checks skipped | " + " | ".join(str(r.judge_skipped_total) for r in reports.values()) + " |")
     if decision is not None:
         lines += ["", f"**Release gate:** {'PASS' if decision.release else 'FAIL'}"]
         lines += [f"- {r}" for r in decision.reasons]
+        if decision.advisories:
+            lines += ["", "**Advisory (does not block):**"]
+            lines += [f"- {a}" for a in decision.advisories]
         if decision.kill_recommended:
             lines += ["", f"**Kill criterion triggered:** {decision.kill_reason}"]
+    if "base" in reports:
+        floors = cfg.category_floors(reports["base"].category_scores())
+        if floors:
+            lines += ["", "**ADR-016 floors (base − tier budget):**"]
+            lines += [f"- {f.category}: ≥ {_fmt(f.floor)} ({f.describe()})" for f in floors.values()]
+        absolute = [c for c in cfg.categories if c.tier in cfg.absolute_tiers]
+        if absolute:
+            lines += ["", "**Absolute floors (ADR-014 — never ≥ base):**"]
+            lines += [
+                f"- {c.name}: " + (f"≥ {_fmt(c.min_score)}" if c.min_score is not None else "**not set** — this tier is unfloored")
+                for c in absolute
+            ]
     return "\n".join(lines) + "\n"
