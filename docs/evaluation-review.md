@@ -308,9 +308,30 @@ Tier 0.6 re-baseline → then, and only then, quote a guardrail or adapter numbe
 
 The six judgements are made (§6). What is left is execution, in this order:
 
-1. **The 0.2 baseline** on the chosen base — one rented-GPU run (~$2, quoted before dispatch), covering the
-   shipping configuration (thinking off + the guardrail prompt) so the number describes what ships. Needs a 0.2
-   report: 0.1.1 is not comparable with the hardened suite.
+1. **The 0.2 baseline** on the chosen base — one rented-GPU run, covering the shipping configuration
+   (thinking off + the guardrail prompt) so the number describes what ships. Needs a 0.2 report: 0.1.1 is not
+   comparable with the hardened suite. Prepared and rehearsed; dispatched from GitHub Actions (the pod runs
+   `entrypoint-eval.sh`, loads the base in-process with the `local` provider, pushes the report to R2 and
+   self-stops):
+
+   | Input | Value |
+   |---|---|
+   | `base_model` / `base_revision` | `Qwen/Qwen3-4B` / `1cfa9a7208912126459214e8b04321603b3df60c` (pinned) |
+   | `eval_config` | `configs/evaluation/zarabench-0.2.yaml` |
+   | `system_prompt_file` | `configs/evaluation/guardrail-system-prompt.md` |
+   | `enable_thinking` | `false` (thinking on is ~100× slower per task and times the pod out) |
+   | `per_category` | `full` (206 tasks; blank means 2 per category, not full) |
+   | `adapter_key` | blank (bare base) |
+   | `remote` | `configs/remote/runpod-a6000-community.yaml` |
+   | `confirm` | `launch` (the default is a dry-run plan) |
+
+   **Cost:** the pod bills GPU time only — roughly 10–35 min of evaluation plus model download and setup at
+   USD 0.79/h (A6000); budget **under USD 1**, and the pod terminates itself when done. Prerequisite: the pod
+   image must contain 0.2, which it does once this lands on `main` (the entrypoint change republishes it) or if
+   `publish-train-image` is dispatched manually.
+
+   **Then:** fetch it with *Fetch training logs (R2)* (`prefix eval-reports/`), commit the report under
+   `evaluation/reports/zarabench-0.2.0/` as the machine baseline, and set the guardrail floors from it (§6.4).
 2. **Then set the guardrail floors** from that baseline (§6.4), and ratchet them.
 3. **Tier 1 deployment** waits on a host: PR #54, the facade in front of the engine, one routed task type, and
    `serve loadtest` to replace the assumed 900 tok/s with a measured number.
