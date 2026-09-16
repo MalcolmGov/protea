@@ -150,7 +150,7 @@ async def test_reports_roundtrip_compare_and_decisions(tmp_path: Path):
     assert decision.kill_recommended
     assert any("structured_output" in r for r in decision.reasons)
     table = render_comparison(cfg, {"candidate": candidate, "frontier": frontier}, decision)
-    assert "Release gate:** FAIL" in table
+    assert "Release gate (score):** FAIL" in table  # the header names the metric the gate judged
     assert "Kill criterion" in table
 
     other = frontier.model_copy(update={"task_set_hash": "different"})
@@ -221,6 +221,34 @@ def test_category_floor_is_base_minus_the_adr_016_tier_budget():
     bad = [CategoryWeight(name="x", weight=1.0, tier="made-up")]
     with pytest.raises(ValueError, match="unknown category tier"):
         EvaluationConfig(suite="zarabench", version="0.1.0", categories=bad)
+
+
+def test_strict_gating_judges_the_pass_rate_not_the_partial_credit_score():
+    """On a suite whose checks accept a valid shape, the mean is shape-dominated: a candidate can hold the same
+    score while losing hard tasks. Under `gate_metric: strict` the gate sees the failures (0.2's policy)."""
+    cfg = _tiered_cfg().model_copy(update={"gate_metric": "strict"})
+    level = {c.name: 0.9 for c in cfg.categories}
+    base = _report(cfg, level, pass_rates=dict(level))
+    # the same mean, but a third of tool_calling's tasks now fail outright
+    candidate = _report(cfg, level, pass_rates={**level, "tool_calling": 0.6}, partial=False)
+    assert release_decision(cfg, candidate, base=base, frontier=None).release is False
+    lenient = cfg.model_copy(update={"gate_metric": "score"})
+    assert release_decision(lenient, candidate, base=base, frontier=None).release is True
+    # ...with the pass-rate regression surfaced as an advisory instead of being lost
+    decision = release_decision(lenient, candidate, base=base, frontier=None)
+    assert any("pass rate" in a and "tool_calling" in a for a in decision.advisories)
+    assert "Release gate (strict pass rate)" in render_comparison(
+        cfg, {"candidate": candidate, "base": base}, release_decision(cfg, candidate, base, None)
+    )
+    assert cfg.aggregate(candidate) == candidate.zarascore_strict
+
+
+def test_strict_gating_derives_floors_from_pass_rates():
+    cfg = _tiered_cfg().model_copy(update={"gate_metric": "strict"})
+    level = {c.name: 0.9 for c in cfg.categories}
+    base = _report(cfg, level, pass_rates={**level, "failure_recovery": 0.5})
+    floors = cfg.category_floors(cfg.metric_of(base))
+    assert floors["failure_recovery"].floor == pytest.approx(0.45)  # 0.5 − supporting 0.05, not 0.9 − 0.05
 
 
 def test_tier_budget_blocks_a_regression_the_weighted_mean_hides():

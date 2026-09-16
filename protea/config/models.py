@@ -177,6 +177,11 @@ class EvaluationConfig(BaseModel):
     # A report with skipped judge checks covers less of the surface than it claims, so it cannot release unless
     # this is knowingly relaxed (the decision then records the uncovered weight as an advisory instead).
     require_complete_report_for_release: bool = True
+    # Which per-category number the gate judges. `score` is the mean fraction of checks passed (partial credit),
+    # which on a suite whose checks accept a valid shape is shape-dominated: on ZaraBench 0.2 a content-free stub
+    # takes 47.9% of the score but only 5.8% of the strict pass rate. `strict` counts a task only when every one
+    # of its checks passes, so it is the honest metric wherever content floors do the work (0.2 and later).
+    gate_metric: Literal["score", "strict"] = "score"
     release_min_zarascore: float = 0.0  # per-category floors are the gate; an aggregate floor is redundant
     latency_budget_ms: int | None = None
     priority_categories: list[str] = Field(
@@ -209,6 +214,14 @@ class EvaluationConfig(BaseModel):
 
     def zarascore(self, scores: dict[str, float]) -> float:
         return sum(c.weight * scores.get(c.name, 0.0) for c in self.categories)
+
+    def metric_of(self, report: Any) -> dict[str, float]:
+        """The per-category numbers the gate judges, per `gate_metric`."""
+        return report.category_pass_rates() if self.gate_metric == "strict" else report.category_scores()
+
+    def aggregate(self, report: Any) -> float:
+        """The weighted headline under the gate metric — `zarascore_strict` when gating strictly."""
+        return report.zarascore_strict if self.gate_metric == "strict" else report.zarascore
 
     def failed_gates(self, scores: dict[str, float]) -> list[str]:
         """Absolute floors only (run-time: no baseline is available yet — ADR-016 budgets are applied by

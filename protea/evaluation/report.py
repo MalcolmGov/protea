@@ -121,7 +121,8 @@ def release_decision(
     """
     reasons: list[str] = []
     advisories: list[str] = []
-    cand = candidate.category_scores()
+    metric = "strict pass rate" if cfg.gate_metric == "strict" else "score"
+    cand = cfg.metric_of(candidate)
     for other in (base, frontier):
         if other is not None:
             reasons.extend(_comparable(candidate, other))
@@ -131,11 +132,11 @@ def release_decision(
         if cfg.require_complete_report_for_release:
             reasons.append(note + "; judge the run or set require_complete_report_for_release: false to accept it")
     if base is not None:
-        bs = base.category_scores()
+        bs = cfg.metric_of(base)
         bs_pass = base.category_pass_rates()
         cand_pass = candidate.category_pass_rates()
         reasons.extend(
-            f"{c}: candidate {_fmt(cand.get(c, 0))} < base {_fmt(bs.get(c, 0))}"
+            f"{c} ({metric}): candidate {_fmt(cand.get(c, 0))} < base {_fmt(bs.get(c, 0))}"
             for c in cfg.priority_categories
             if cand.get(c, 0.0) < bs.get(c, 0.0)
         )
@@ -148,12 +149,13 @@ def release_decision(
                 reasons.append(
                     f"{name}: candidate {_fmt(score)} < floor {_fmt(spec.floor)} ({spec.describe()}) [ADR-016]"
                 )
-        advisories.extend(
-            f"{c.name}: strict pass rate {_fmt(cand_pass.get(c.name))} < base {_fmt(bs_pass.get(c.name))}"
-            f" — the mean may be hiding hard failures (check the failure modes)"
-            for c in cfg.categories
-            if c.name in bs_pass and c.name in cand_pass and cand_pass[c.name] + 0.02 < bs_pass[c.name]
-        )
+        if cfg.gate_metric != "strict":  # under strict gating this is the gated number, not an advisory
+            advisories.extend(
+                f"{c.name}: strict pass rate {_fmt(cand_pass.get(c.name))} < base {_fmt(bs_pass.get(c.name))}"
+                f" — the mean may be hiding hard failures (check the failure modes)"
+                for c in cfg.categories
+                if c.name in bs_pass and c.name in cand_pass and cand_pass[c.name] + 0.02 < bs_pass[c.name]
+            )
         unfloored = cfg.unfloored_absolute_categories()
         if unfloored:
             advisories.append(
@@ -161,21 +163,23 @@ def release_decision(
                 "floor, not against the baseline — set `min_score` on those categories"
             )
     if frontier is not None:
-        fs = frontier.category_scores()
+        fs = cfg.metric_of(frontier)
         reasons.extend(
-            f"{c}: candidate {_fmt(cand.get(c, 0))} < frontier {_fmt(fs.get(c, 0))}"
+            f"{c} ({metric}): candidate {_fmt(cand.get(c, 0))} < frontier {_fmt(fs.get(c, 0))}"
             for c in cfg.frontier_gate_categories
             if cand.get(c, 0.0) < fs.get(c, 0.0)
         )
     reasons.extend(f"config gate failed: {g}" for g in candidate.failed_gates)
     decision = Decision(release=not reasons, reasons=reasons, advisories=advisories)
-    if frontier is not None and frontier.zarascore > 0:
-        floor = cfg.kill_fraction_of_frontier * frontier.zarascore
-        if candidate.zarascore < floor:
+    frontier_headline = cfg.aggregate(frontier) if frontier is not None else 0.0
+    if frontier is not None and frontier_headline > 0:
+        floor = cfg.kill_fraction_of_frontier * frontier_headline
+        candidate_headline = cfg.aggregate(candidate)
+        if candidate_headline < floor:
             decision.kill_recommended = True
             decision.kill_reason = (
-                f"ZaraScore {_fmt(candidate.zarascore)} is below {cfg.kill_fraction_of_frontier:.0%} of the frontier "
-                f"({_fmt(frontier.zarascore)}); strategy-review A1 says stop training unless the economics changed"
+                f"aggregate {_fmt(candidate_headline)} is below {cfg.kill_fraction_of_frontier:.0%} of the frontier "
+                f"({_fmt(frontier_headline)}); strategy-review A1 says stop training unless the economics changed"
             )
     return decision
 
@@ -200,7 +204,8 @@ def render_comparison(cfg: EvaluationConfig, reports: dict[str, BenchmarkReport]
     if any(r.partial for r in reports.values()):
         lines.append("| judge checks skipped | " + " | ".join(str(r.judge_skipped_total) for r in reports.values()) + " |")
     if decision is not None:
-        lines += ["", f"**Release gate:** {'PASS' if decision.release else 'FAIL'}"]
+        metric = "strict pass rate" if cfg.gate_metric == "strict" else "score"
+        lines += ["", f"**Release gate ({metric}):** {'PASS' if decision.release else 'FAIL'}"]
         lines += [f"- {r}" for r in decision.reasons]
         if decision.advisories:
             lines += ["", "**Advisory (does not block):**"]

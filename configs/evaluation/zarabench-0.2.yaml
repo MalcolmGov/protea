@@ -18,12 +18,22 @@ judge_must_differ_from_generator: true
 # The gate is unchanged from 0.1.1 (ADR-016 budgets, ADR-014 absolute guardrails): see the 0.1 config for the
 # full commentary. `tier_budgets` is kept equal to capability-spec.yaml::regression_budgets by a test.
 tier_budgets: {frontier_gate: 0.00, priority: 0.02, guardrail: 0.00, supporting: 0.05}
-absolute_tiers: [guardrail]           # graded against an absolute floor, never "≥ base" — still unset, see 0.1
+absolute_tiers: [guardrail]           # graded against an absolute floor, never "≥ base"
+# DECIDED 2026-09-16: gate on the strict pass rate on 0.2. Partial credit stays shape-dominated even after the
+# content floors (a content-free stub takes 47.9% of the score but 5.8% strict), so the strict number is the one
+# that can only be earned by passing every check on a task. Both are still reported; only the gate changes.
+gate_metric: strict
 priority_categories: [agent_generation, structured_output, tool_calling, connector_selection]
 frontier_gate_categories: [structured_output]
 kill_fraction_of_frontier: 0.8
-require_complete_report_for_release: true
+# DECIDED 2026-09-16: the gate is judge-free (ADR-007 makes deterministic checks the source of truth) and the
+# judge coverage is reported instead of blocking: every partial report carries the skipped-check count and the
+# share of weight it covers. Judge only the language checks, when a release is actually being considered.
+require_complete_report_for_release: false
 release_min_zarascore: 0.0
+# Guardrail floors (safety, hallucination) are deliberately still unset: ADR-014 wants an ABSOLUTE floor, and the
+# honest number is "what the shipping configuration actually achieves on 0.2". Set both `min_score` values from
+# the first 0.2 baseline of the chosen base model, then ratchet — never invent them ahead of the evidence.
 
 concurrency: 4
 max_tool_rounds: 3

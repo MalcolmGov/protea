@@ -1,0 +1,22 @@
+id: qwen3-1.7b
+hf_repo: Qwen/Qwen3-1.7B
+family: qwen3
+license: apache-2.0
+params_b: 1.7
+context_length: 32768
+gated: false
+languages: [en, af, zu, sw, fr, pt, es, de, it, hi, zh]
+supports_tools: true
+chat_template: native
+serving:
+  dtype: float32           # CPU-only: the point of this model is the inner dev loop, not throughput
+  quantization: none
+  max_model_len: 8192
+  tool_call_parser: hermes
+  min_vram_gb: 0
+notes: >-
+  DECIDED 2026-09-16 as the local development model (docs/evaluation-review.md §6). It exists so the instrument,
+  the prompts and the eval plumbing can be exercised on a laptop with no GPU: `PROTEA_LOCAL_MODEL=Qwen/Qwen3-1.7B`
+  with the `local` provider, a subset run (`--per-category 2`) in minutes rather than hours. Its absolute scores
+  are not a product signal — it is the smallest member of the same family and the same chat/tool format, so what
+  transfers is shapes and checks, not capability. Never quote its ZaraScore as a v0 result.
