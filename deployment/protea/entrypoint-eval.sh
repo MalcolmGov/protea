@@ -38,7 +38,10 @@ fi
 # PROTEA_ADAPTER_KEY is OPTIONAL: set -> score base + that adapter; unset -> score the bare base (the B0 baseline).
 BASE_MODEL="${PROTEA_BASE_MODEL:-Qwen/Qwen3-8B}"
 BASE_REVISION="${PROTEA_BASE_REVISION:-}"   # pin the base to an exact Hub commit so the baseline is reproducible
-EVAL_CONFIG="${PROTEA_EVAL_CONFIG:-configs/evaluation/zarabench-0.1.yaml}"
+# ZaraBench 0.2 is the default: it carries the content floors and affirmative checks (docs/zarabench.md).
+# 0.1.1 remains available for the P0-P0.2 lineage by setting PROTEA_EVAL_CONFIG explicitly, but its numbers are
+# only quotable as published — the evaluators those runs used are not today's.
+EVAL_CONFIG="${PROTEA_EVAL_CONFIG:-configs/evaluation/zarabench-0.2.yaml}"
 PER_CATEGORY="${PROTEA_EVAL_PER_CATEGORY:-2}"
 # "full"/"all"/"0" runs the WHOLE suite. A blank cannot reach here to mean that: the launcher drops empty
 # PROTEA_* vars, and the :-2 default above would re-fill 2 — so a non-empty sentinel is the only way to ask for

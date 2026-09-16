@@ -23,13 +23,21 @@ on:
         required: false
         default: ""
       base_model:
-        description: Base model to load (and that the adapter, if any, attaches to)
+        description: Base model to load (and that the adapter, if any, attaches to). The 4B is the v0 candidate (docs/evaluation-review.md 6.1).
         required: true
-        default: Qwen/Qwen3-8B
+        default: Qwen/Qwen3-4B
       base_revision:
-        description: Pinned Hub commit of the base — required for a reproducible baseline (see configs/models/qwen3-8b.yaml)
+        description: Pinned Hub commit of the base — required for a reproducible baseline (see configs/models/qwen3-4b.yaml; the 8B is in qwen3-8b.yaml)
         required: true
-        default: b968826d9c46dd6066d109eabc6255188de91218
+        default: 1cfa9a7208912126459214e8b04321603b3df60c
+      eval_config:
+        description: ZaraBench suite config. 0.2 is the hardened suite (content floors + affirmative checks); 0.1.1 is the P0-P0.2 lineage, quotable only as published.
+        required: true
+        default: configs/evaluation/zarabench-0.2.yaml
+        type: choice
+        options:
+          - configs/evaluation/zarabench-0.2.yaml
+          - configs/evaluation/zarabench-0.1.yaml
       per_category:
         description: Tasks per category (a quick deterministic sample), or 'full' for the whole 206-task suite — the real baseline. Blank does NOT mean full; pick 'full'.
         required: true
@@ -41,9 +49,9 @@ on:
         required: false
         default: ""
       system_prompt_file:
-        description: 'Optional repo path to a system-prompt overlay prepended to every task, e.g. configs/evaluation/guardrail-system-prompt.md (blank = tasks as-authored). Scores the base under its production guardrail framing (Exp 0).'
+        description: 'Optional repo path to a system-prompt overlay prepended to every task, e.g. configs/evaluation/guardrail-system-prompt.md (blank = tasks as-authored). Set it for a v0 baseline: v0 ships base + that prompt.'
         required: false
-        default: ""
+        default: configs/evaluation/guardrail-system-prompt.md
       enable_thinking:
         description: "Qwen3 reasoning mode. 'default' leaves the chat template alone (the sealed instrument). 'false' switches thinking OFF — needed to score the BARE BASE in a sane time (thinking-on fills max_tokens with a <think> trace every round, ~100x slower/task, times the pod out). Adapters are already terse: leave 'default'."
         required: false
@@ -158,6 +166,7 @@ jobs:
           PROTEA_ADAPTER_KEY: ${{ inputs.adapter_key }}
           PROTEA_BASE_MODEL: ${{ inputs.base_model }}
           PROTEA_BASE_REVISION: ${{ inputs.base_revision }}
+          PROTEA_EVAL_CONFIG: ${{ inputs.eval_config }}
           PROTEA_EVAL_PER_CATEGORY: ${{ inputs.per_category }}
           PROTEA_EVAL_CATEGORIES: ${{ inputs.categories }}
           PROTEA_EVAL_SYSTEM_PROMPT_FILE: ${{ inputs.system_prompt_file }}
