@@ -32,9 +32,12 @@ from protea.serving.openai_compat import (
     to_chat_completion,
     to_generation_request,
 )
+from protea.serving.prompt import maybe_prompted, resolve_system_prompt
+from protea.serving.ratelimit import build_limiter
 
 ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     401: {"description": "missing or invalid bearer token"},
+    429: {"description": "caller over its per-tenant request ceiling (retry-after)"},
     404: {"description": "unknown model name"},
     422: {"description": "structured output still invalid after repair"},
     500: {"description": "backend failed"},
@@ -56,6 +59,7 @@ class FacadeState:
         self.cfg = cfg
         self.backend = backend
         self.token = token
+        self.limiter = build_limiter(cfg.rate_limit_rpm, cfg.rate_limit_burst)
         self.metrics = Metrics()
         self.ready = False
         self.ready_detail = "not checked"
@@ -240,6 +244,17 @@ async def _observe(request: Request, call_next):
     if state.draining:
         return JSONResponse({"error": "shutting down"}, status_code=503, headers={"connection": "close"})
     route = request.url.path
+    if state.limiter is not None and route.startswith("/v1/"):
+        key = _tenant_ref(request) or (request.client.host if request.client else "anonymous")
+        allowed, retry_after = state.limiter.check(key)
+        if not allowed:
+            # Ops endpoints stay open: a throttled caller must still be able to see /readyz and /metrics.
+            state.metrics.inc("protea_rate_limited_total")
+            return JSONResponse(
+                {"error": "rate limit exceeded", "retry_after_s": round(retry_after, 1)},
+                status_code=429,
+                headers={"retry-after": str(max(1, int(retry_after + 0.999)))},
+            )
     started = time.perf_counter()
     state.enter()
     try:
@@ -256,6 +271,10 @@ def create_app(cfg: ServeConfig, backend: ModelProvider, *, token: str | None = 
     """`router` is an optional protea.router.ModelRouter; when given, `/v1/route/*` is mounted."""
     if cfg.require_token and not token:
         raise ValueError("require_token is set but no token was provided (PROTEA_FACADE_TOKEN)")
+    # ADR-017 product framing goes on first, then the tool guard wraps it, so the guard judges what the model
+    # actually produced under the guardrail prompt. Both wraps are idempotent.
+    prompt = resolve_system_prompt(cfg.system_prompt, cfg.system_prompt_file)
+    backend = maybe_prompted(backend, prompt)
     if cfg.tool_policy is not None and not isinstance(backend, GuardedProvider):
         backend = GuardedProvider(backend, cfg.tool_policy)
     state = FacadeState(cfg, backend, token)

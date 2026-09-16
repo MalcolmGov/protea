@@ -12,7 +12,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_serializer, model_validator
 
 from protea.schemas.examples import LANGUAGE_TAGS
 from protea.schemas.generation import Message, ToolCall, ToolSchema
@@ -56,12 +56,22 @@ class Expect(BaseModel, extra="forbid"):
     must_include: list[str] = Field(default_factory=list)  # every phrase, case-insensitive
     must_not_include: list[str] = Field(default_factory=list)
     max_words: int | None = None
+    min_words: int | None = None  # the reply must be actual language, not a one-liner placeholder
+    # Affirmative requirements (ZaraBench 0.2, F10): a "never do X" check is passed by saying nothing, so a
+    # category that tests refusal or language needs a check for what the reply must *contain*.
+    refuses_any: list[str] = Field(default_factory=list)  # the deterministic sibling of the judge's `refuses`
+    must_any: list[str] = Field(default_factory=list)  # must contain at least one of these (the safe path, an action)
+    lang_markers: list[str] = Field(default_factory=list)  # tokens that mark the reply as being in `lang`
     # structured output
     json_only: bool = False
     schema_: dict[str, Any] | None = Field(default=None, alias="schema")
     json_equals: Any | None = None
     json_fields: dict[str, Any] = Field(default_factory=dict)  # dotted path -> expected value
     json_required: list[str] = Field(default_factory=list)  # top-level keys
+    # content floors (ZaraBench 0.2): a valid shape is not an answer. These make the answer carry substance —
+    # without them a stub of `"x"` and an empty list scores full marks on the structural categories.
+    json_min_chars: dict[str, int] = Field(default_factory=dict)  # dotted path -> minimum string length
+    json_min_items: dict[str, int] = Field(default_factory=dict)  # dotted path -> minimum list length
     known_tools: list[str] = Field(default_factory=list)  # names allowed in output `tools`
     known_connectors: list[str] = Field(default_factory=list)  # ids allowed in output `bindings`
     bindings: dict[str, str | list[str]] = Field(default_factory=dict)  # tool -> expected connector(s)
@@ -73,6 +83,22 @@ class Expect(BaseModel, extra="forbid"):
     rubric_min: float = 0.7  # normalised 0-1
 
     model_config = {"populate_by_name": True}
+
+    @model_serializer(mode="wrap")
+    def _omit_unset_content_floors(self, handler) -> dict[str, Any]:
+        """Keep the sealed task sets byte-identical: a task that declares no content floors serialises as before.
+
+        The 0.1.1, security and citizen sets are sealed by hash; adding fields to `Expect` must not rewrite their
+        bytes (a re-seal would break comparability with every committed report). Only a task that actually carries
+        a floor — ZaraBench 0.2 — writes one.
+        """
+        data = handler(self)
+        for key in ("json_min_chars", "json_min_items", "refuses_any", "must_any", "lang_markers"):
+            if not data.get(key):
+                data.pop(key, None)
+        if data.get("min_words") is None:
+            data.pop("min_words", None)
+        return data
 
     @model_validator(mode="after")
     def _consistent(self) -> Expect:

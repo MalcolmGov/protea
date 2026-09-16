@@ -22,6 +22,15 @@ class ServeConfig(BaseModel):
     route_events: str | None = None  # JSONL file for route/fallback events (default: application log)
     workers: int = 1
     tool_policy: ToolPolicy | None = None  # tool-permission guard applied to every backend response (serving/guard.py)
+    # ADR-017: v0 ships the frozen base + the guardrail prompt. The overlay is prepended to every request's own
+    # system message (serving/prompt.py) so aria's per-agent prompts survive underneath it. A file wins over the
+    # inline string; prefer the file so the text that was evaluated is the text that serves.
+    system_prompt: str | None = None
+    system_prompt_file: str | None = None  # repo path, e.g. configs/evaluation/guardrail-system-prompt.md
+    # Per-tenant request ceiling across /v1/*, in-process and per replica (serving/ratelimit.py). None = unlimited;
+    # set it before the first partner is routed here, and keep it above the runtime's steady-state turn rate.
+    rate_limit_rpm: int | None = Field(default=None, ge=1)
+    rate_limit_burst: int | None = Field(default=None, ge=1)  # defaults to one minute's worth (rate_limit_rpm)
 
     def model_aliases(self) -> set[str]:
         return {self.served_model, *self.aliases}

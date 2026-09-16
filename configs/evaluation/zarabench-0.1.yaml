@@ -1,5 +1,4 @@
 # ZaraBench 0.1 — Zara's task suite inside the Protea evaluation framework (spec §22–§23).
-# Weights favour the v0 priorities (§64). min_score values are release gates per category.
 suite: zarabench
 version: 0.1.1                        # 0.1.1: allowed category/tier values in prompts, category-tolerant bindings, specific-only facts
 tasks_path: evaluation/zarabench/0.1/tasks.jsonl
@@ -7,13 +6,33 @@ lock_path: evaluation/zarabench/0.1/golden.lock
 judge_provider: null                  # e.g. anthropic; set per run and never the model under test
 judge_model: null                     # must differ from any synthetic-data generator (registry generator_models)
 judge_must_differ_from_generator: true
-release_min_zarascore: 0.0            # set once baselines exist; never release on training loss
+
+# --- the release gate ---------------------------------------------------------------------------------------
+# ADR-016 as executable policy: a candidate may not fall more than its tier's budget below the frozen baseline
+# in ANY category. The gate derives each floor as `base − budget` at compare time, so re-baselining (or moving
+# to a smaller base model) needs no edit here and a floor can never drift from the baseline it came from.
+# `protea evaluate compare` prints the derived floors; an optional per-category `min_score` remains available as
+# an absolute floor, and leaving it unset means "governed by the tier budget".
+tier_budgets: {frontier_gate: 0.00, priority: 0.02, guardrail: 0.00, supporting: 0.05}
+# ADR-014: guardrail categories are graded against an ABSOLUTE floor, never "≥ base" — so they do not take a
+# derived floor, and each needs an explicit `min_score`. They are unset today because the number is a product
+# decision (what safety/truthfulness must reach) and because the shipping config is pending a re-baseline; the
+# comparison prints "not set — this tier is unfloored" until then. See docs/evaluation-review.md §8.3.
+absolute_tiers: [guardrail]
 priority_categories: [agent_generation, structured_output, tool_calling, connector_selection]
 frontier_gate_categories: [structured_output]
-kill_fraction_of_frontier: 0.8        # strategy-review A1
+kill_fraction_of_frontier: 0.8        # strategy-review A1. NOTE: toothless while the frontier baseline is not
+                                      # materially better than the base — see docs/evaluation-review.md F1.
+# A partial report (judge checks skipped, categories uncovered) cannot release until this is knowingly relaxed;
+# the decision then records the uncovered weight as an advisory. All committed 0.1.1 reports are partial today,
+# because judge_provider is null and 43/206 tasks carry a judge-dependent check.
+require_complete_report_for_release: true
+release_min_zarascore: 0.0            # per-category floors above are the gate; an aggregate floor would duplicate them
+
 concurrency: 4
 max_tool_rounds: 3
-max_tokens: 4000                      # agent specs run to ~2-3k output tokens; 800 truncated every one in the first baseline
+max_tokens: 4000                      # agent specs run to ~2-3k output tokens; 800 truncated every one in the first baseline.
+                                      # 6 sealed golden references themselves exceed this budget (docs/zarabench.md).
 temperature: 0.0
 # USD per million tokens, used only for spend estimates (update from the providers' price pages before a paid run).
 prices:
@@ -23,14 +42,19 @@ prices:
   gpt-5: {input: 1.25, output: 10.0}
   gemini-2.5-pro: {input: 1.25, output: 10.0}
   Qwen/Qwen3-8B: {input: 0.0, output: 0.0}   # self-hosted: GPU time is accounted separately
+
+# Tiers per the capability spec (ADR-014/016). structured_output is frontier_gate; agent_generation/
+# tool_calling/connector_selection are priority (all four are also in priority_categories, which holds them at ≥
+# base — stricter than their budget); safety and hallucination are guardrail, graded against an absolute floor
+# (see `absolute_tiers` above); the rest are supporting, with 0.05 of headroom against the baseline.
 categories:
-  - {name: agent_generation,     weight: 0.20, min_score: 0.0}
-  - {name: structured_output,    weight: 0.15, min_score: 0.0}
-  - {name: tool_calling,         weight: 0.15, min_score: 0.0}
-  - {name: connector_selection,  weight: 0.10, min_score: 0.0}
-  - {name: workflow_generation,  weight: 0.10, min_score: 0.0}
-  - {name: business_reasoning,   weight: 0.10, min_score: 0.0}
-  - {name: failure_recovery,     weight: 0.05, min_score: 0.0}
-  - {name: safety,               weight: 0.05, min_score: 0.0}
-  - {name: hallucination,        weight: 0.05, min_score: 0.0}
-  - {name: instruction_following, weight: 0.05, min_score: 0.0}
+  - {name: agent_generation,      weight: 0.20, tier: priority}
+  - {name: structured_output,     weight: 0.15, tier: frontier_gate}  # must REACH the frontier, per the capability spec
+  - {name: tool_calling,          weight: 0.15, tier: priority}
+  - {name: connector_selection,   weight: 0.10, tier: priority}
+  - {name: workflow_generation,   weight: 0.10, tier: supporting}
+  - {name: business_reasoning,    weight: 0.10, tier: supporting}
+  - {name: failure_recovery,      weight: 0.05, tier: supporting}
+  - {name: safety,                weight: 0.05, tier: guardrail}
+  - {name: hallucination,         weight: 0.05, tier: guardrail}
+  - {name: instruction_following, weight: 0.05, tier: supporting}

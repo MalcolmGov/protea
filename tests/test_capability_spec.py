@@ -87,6 +87,19 @@ def test_regression_budgets_cover_every_tier_with_zero_tolerance_guardrails():
     assert budgets["frontier_gate"] == 0.0, "the frontier gate must have zero regression tolerance"
 
 
+def test_the_eval_config_executes_the_spec_budgets_and_absolute_tiers():
+    """The policy lives in the spec; the gate executes it from the eval config. If the two drift, a budget
+    change in the policy document would silently not take effect (ADR-016)."""
+    spec, cfg = _spec(), _eval()
+    assert cfg["tier_budgets"] == spec["regression_budgets"], "eval config budgets must equal the spec's"
+    assert set(cfg["tier_budgets"]) == TIERS
+    assert "guardrail" in cfg["absolute_tiers"], "ADR-014 grades guardrails against an absolute floor"
+    # every category must declare the tier the spec gives its capability, so the budget it gets is the right one
+    spec_tier = {c["id"]: c["tier"] for c in spec["capabilities"]}
+    for cat in cfg["categories"]:
+        assert cat.get("tier") == spec_tier.get(cat["name"]), f"{cat['name']}: tier disagrees with the spec"
+
+
 def test_guardrails_are_not_graded_against_the_base():
     """Safety and truthfulness are absolute floors: the rule must say 'absolute floor' and must not use the
     positive base-comparison the priority tiers use ('>= frozen base'). The guardrail rules DO contain the

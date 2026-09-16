@@ -38,9 +38,18 @@ Deferred (needs its own validated change, not in this pass):
 - **`assistant_only_loss` is off** (`protea/config/models.py:63`, defaults False, unset in both configs) → loss
   runs over the whole prompt, not just the completion. Enabling it needs a chat template with `{% generation %}`
   markers + a training smoke test; recommended as the next config lever after trim is measured.
-- **Eval `max_tokens` is arguably too low** (6 of 25 golden references themselves exceed 4000 tokens, so those
-  tasks are unsatisfiable for any model). Raising it changes the measuring instrument and would require
+- **Eval `max_tokens` is arguably too low** (6 of 25 golden references themselves exceed 4000 tokens, which is a
+  reason to review the budget — see the correction below). Raising it changes the measuring instrument and would require
   re-establishing B0, so it is *not* changed here; the trim fixes our model's side at the current budget.
+
+  > **Correction (2026-09-16).** The parenthetical above originally read "…so those tasks are unsatisfiable for
+  > any model". That is wrong and this document should not be quoted for it: those six are `agent_generation`
+  > tasks whose checks are structural (bare JSON, the AgentSpecLite schema, four field values, no invented tools),
+  > so a *concise* answer satisfies them at the 4000-token budget. Verified by construction — a ~70-token
+  > schema-shaped object scores **1.00** on all six (`protea evaluate audit`, `protea/evaluation/audit.py`).
+  > The real defect is the opposite of unsatisfiability: the category cannot tell a 70-token stub from a
+  > production-ready spec, which is why the trim was plausible and why it changed nothing. See F9 in
+  > `docs/evaluation-review.md`.
 
 ## The fix (Phase A) — `dataset trim`, offline, no GPU
 

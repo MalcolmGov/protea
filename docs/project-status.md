@@ -161,6 +161,9 @@ Adapters under `checkpoints/protea-agent-0.2.x/…/adapter`; the latest (P0.2) i
 
 ## 7. What remains (roadmap)
 
+> The evidence-backed, tiered action list (instrument fixes first, then serving, then training) is in
+> [`evaluation-review.md`](evaluation-review.md), written 2026-09-16 at `c3815b5`.
+
 ### Near-term — stand up the v0 product (the next phase)
 1. **Publish serve images** — **PR #54** (`publish-serve-images`) is staged but unmerged; land it.
 2. **Deploy base+prompt** behind the vLLM path + facade (ADR-009), thinking-off, with the guardrail prompt wired

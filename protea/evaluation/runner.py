@@ -62,6 +62,11 @@ class BenchmarkReport(BaseModel):
     def category_pass_rates(self) -> dict[str, float]:
         return {c.name: c.pass_rate for c in self.categories}
 
+    @property
+    def judge_skipped_total(self) -> int:
+        """Judge checks that could not run — the size of the surface a judge-free score does not cover."""
+        return sum(c.judge_skipped for c in self.categories)
+
 
 def _percentile(values: list[int], pct: float) -> int:
     if not values:

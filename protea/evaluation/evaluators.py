@@ -7,6 +7,7 @@ without one they are reported as skipped rather than scored, so a run never sile
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -63,7 +64,19 @@ def _norm(text: str) -> str:
 
 
 def _phrase_in(phrase: str, text: str) -> bool:
-    return _norm(phrase) in text
+    """Is `phrase` present in the (already normalised) `text`?
+
+    A single alphanumeric token is matched on word boundaries, because plain substring matching made the suite
+    accidentally generous: `id` matched inside "gu*i**d**ance", `30` inside "3000", `10` inside "2010". Phrases
+    with spaces or punctuation ("8 op hande", "can't", "$194") stay substring matches, which is what those
+    expectations mean. Changed in ZaraBench 0.2 — see the changelog.
+    """
+    needle = _norm(phrase)
+    if not needle:
+        return False
+    if needle.isalnum() and " " not in needle:
+        return re.search(rf"(?<![a-z0-9]){re.escape(needle)}(?![a-z0-9])", text) is not None
+    return needle in text
 
 
 def _unfence(text: str) -> str:
@@ -166,6 +179,22 @@ def _text_checks(e: Expect, text: str) -> list[Check]:
     if e.max_words is not None:
         n = len(text.split())
         checks.append(Check(name="max_words", ok=n <= e.max_words, detail=f"{n} words > {e.max_words}"))
+    if e.min_words is not None:
+        n = len(text.split())
+        checks.append(Check(name="min_words", ok=n >= e.min_words, detail=f"{n} words < {e.min_words}"))
+    if e.refuses_any:
+        hit = [p for p in e.refuses_any if _phrase_in(p, norm)]
+        checks.append(
+            Check(name="refuses_any", ok=bool(hit), detail="" if hit else f"none of {e.refuses_any}")
+        )
+    if e.must_any:
+        hit = [p for p in e.must_any if _phrase_in(p, norm)]
+        checks.append(Check(name="must_any", ok=bool(hit), detail="" if hit else f"none of {e.must_any}"))
+    if e.lang_markers:
+        hit = [p for p in e.lang_markers if _phrase_in(p, norm)]
+        checks.append(
+            Check(name="lang_markers", ok=bool(hit), detail="" if hit else f"none of {e.lang_markers}")
+        )
     return checks
 
 
@@ -177,6 +206,8 @@ def _needs_json(e: Expect) -> bool:
         or e.json_equals is not None
         or e.json_fields
         or e.json_required
+        or e.json_min_chars
+        or e.json_min_items
         or e.known_tools
         or e.known_connectors
         or e.bindings
@@ -199,6 +230,37 @@ def _field_checks(e: Expect, obj: Any) -> list[Check]:
     if e.json_required:
         missing = [k for k in e.json_required if not (isinstance(obj, dict) and k in obj)]
         checks.append(Check(name="required_keys", ok=not missing, detail=f"missing {missing}" if missing else ""))
+    return checks
+
+
+def _content_checks(e: Expect, obj: Any) -> list[Check]:
+    """Substance floors (ZaraBench 0.2): the fields that must carry content, not just be present.
+
+    Structural checks accept `"x"` for a system prompt and `[]` for a tool list, which is how a stub came to
+    score full marks on `agent_generation`. These are deliberately floors, not quality bars: a padding model can
+    still pass them, and the judge is the path to a real quality bar. Their job is to make the *free* band small.
+    """
+    checks: list[Check] = []
+    for path, minimum in sorted(e.json_min_chars.items()):
+        found, value = _lookup(obj, path)
+        length = len(value.strip()) if isinstance(value, str) else -1
+        checks.append(
+            Check(
+                name=f"field_len:{path}",
+                ok=found and length >= minimum,
+                detail="missing" if not found else f"{length} chars < {minimum}",
+            )
+        )
+    for path, minimum in sorted(e.json_min_items.items()):
+        found, value = _lookup(obj, path)
+        size = len(value) if isinstance(value, list) else -1
+        checks.append(
+            Check(
+                name=f"field_items:{path}",
+                ok=found and size >= minimum,
+                detail="missing" if not found else f"{size} items < {minimum}",
+            )
+        )
     return checks
 
 
@@ -274,6 +336,7 @@ _STRUCTURED: list[tuple[Callable[[Expect], bool], Callable[[Expect, Any], list[C
     (lambda e: e.schema_ is not None, lambda e, o: [_schema_check(e.schema_ or {}, o)]),
     (lambda e: e.json_equals is not None, lambda e, o: [Check(name="json_equals", ok=_same(o, e.json_equals))]),
     (lambda e: bool(e.json_fields or e.json_required), _field_checks),
+    (lambda e: bool(e.json_min_chars or e.json_min_items), _content_checks),
     (lambda e: bool(e.known_tools or e.known_connectors), _allowlist_checks),
     (lambda e: bool(e.bindings), _binding_checks),
     (lambda e: e.workflow is not None, lambda e, o: _workflow_checks(e.workflow or WorkflowExpect(), o)),

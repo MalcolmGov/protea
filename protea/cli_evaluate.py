@@ -159,6 +159,86 @@ def evaluate_author_citizen(
     )
 
 
+@evaluate_app.command("harden")
+def evaluate_harden(
+    source: Path = typer.Option(DEFAULT_CONFIG, exists=True, help="The suite config to harden from (its tasks_path is read)."),
+    out: Path = typer.Option(Path("evaluation/zarabench/0.2/tasks.jsonl"), help="Where the hardened task set is written."),
+    root: Path = typer.Option(Path(".")),
+    floor_chars: int = typer.Option(40, help="Every content-bearing string field must reach this, whatever the reference."),
+    keep_chars: float = typer.Option(0.10, help="...and this share of the reference's own length."),
+    cap_chars: int = typer.Option(400, help="...capped here, so the budget stays inside max_tokens."),
+    floor_words: int = typer.Option(12, help="A prose answer below this many words is a placeholder."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print the derivation and stop before writing."),
+) -> None:
+    """Harden a suite: authored expectations first, then content floors derived from the new witnesses.
+
+    Two passes, in this order for a reason. `affirm` supplies what a derivation cannot — the affirmative
+    requirements a "never do X" check lacks, and a witness that carries them (Tier 0.4b, F10). `harden` then
+    derives its length floors from those witnesses rather than from the authoring placeholders they replaced.
+    The sealed set is never edited: this reads it, proves every reference still passes its own (now stricter)
+    checks, and writes a new task set for `evaluate seal`.
+    """
+    from protea.evaluation.affirm import affirm
+    from protea.evaluation.harden import HardenRules, check_references_pass, harden
+    from protea.evaluation.tasks import write_tasks
+
+    cfg, _config_hash, tasks, _task_hash = _load(source, root)
+    rules = HardenRules(
+        floor_chars=floor_chars, keep_chars=keep_chars, cap_chars=cap_chars, floor_words=floor_words
+    )
+    tasks, affirm_report = affirm(tasks)
+    typer.echo(affirm_report.summary())
+    hardened, report = harden(tasks, rules)
+    typer.echo("\n" + report.summary())
+    if report.examples:
+        typer.echo("\nderived (first lines):" + "".join(f"\n  {line}" for line in report.examples))
+    failures = check_references_pass(hardened)
+    if failures:
+        _fail(
+            "references that no longer pass their own hardened checks (the suite must stay satisfiable):\n  "
+            + "\n  ".join(failures[:20])
+        )
+    typer.echo(f"\nevery reference still passes ({len(hardened)} tasks)")
+    if dry_run:
+        typer.echo("dry run: nothing written")
+        return
+    write_tasks(hardened, root / out)
+    typer.echo(f"wrote {len(hardened)} tasks to {out}")
+    typer.echo(f"next: point a config at it (suite {cfg.suite}, version 0.2.0) and run `protea evaluate seal`")
+
+
+@evaluate_app.command("audit")
+def evaluate_audit(
+    config: Path = typer.Option(DEFAULT_CONFIG, exists=True),
+    root: Path = typer.Option(Path(".")),
+    as_json: bool = typer.Option(False, "--json"),
+    max_zarascore: float | None = typer.Option(
+        None,
+        "--max-zarascore",
+        help="Exit 2 when the stub floor exceeds this share (e.g. 0.40 once the suite is tightened). Report-only by default.",
+    ),
+) -> None:
+    """Score a content-free stub on the sealed suite: the floor of the instrument (no model, no GPU, no judge).
+
+    A ZaraScore is only quotable if a stub cannot reach it. Run this next to `evaluate verify` before drawing a
+    conclusion from any run, and re-run it after changing an evaluator — a fix that lowers the floor is a fix.
+    """
+    from protea.evaluation.audit import audit
+
+    cfg, _config_hash, tasks, _task_hash = _load(config, root)
+    result = audit(tasks, cfg)
+    if as_json:
+        typer.echo(json.dumps(result.model_dump(), indent=2))
+    else:
+        typer.echo(result.render(), nl=False)
+    if max_zarascore is not None and result.stub_zarascore > max_zarascore:
+        _fail(
+            f"stub floor {result.stub_zarascore:.1%} exceeds --max-zarascore {max_zarascore:.1%}: "
+            "this suite cannot yet distinguish a capability from a shape",
+            code=2,
+        )
+
+
 def _reference_failures(tasks) -> list[str]:
     from protea.config.models import CategoryWeight, EvaluationConfig
     from protea.evaluation.reference import ReferenceProvider

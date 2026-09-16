@@ -46,18 +46,24 @@ def _build_router(cfg, backend):
     from protea.config import load_config
     from protea.router import JsonlRouteSink, ModelRouter
     from protea.serving.guard import GuardedProvider
+    from protea.serving.prompt import maybe_prompted, resolve_system_prompt
 
     policy = load_config(Path(cfg.routing_policy), "routing")
+    prompt = resolve_system_prompt(cfg.system_prompt, cfg.system_prompt_file)
+    backend = maybe_prompted(backend, prompt)
     if cfg.tool_policy is not None and not isinstance(backend, GuardedProvider):
         backend = GuardedProvider(backend, cfg.tool_policy)
     preset = {c.name: backend for c in policy.candidates if c.provider == backend.name}
     sink = JsonlRouteSink(Path(cfg.route_events)) if cfg.route_events else None
     factory = None
-    if cfg.tool_policy is not None:
+    if cfg.tool_policy is not None or prompt:
         from protea.router.router import _default_factory
 
         def factory(c):
-            return GuardedProvider(_default_factory(c), cfg.tool_policy)
+            # The product framing and the tool guard apply to a fallback candidate too: a routed request must
+            # meet the same operating rules whichever model answered it (same reasoning as the guard's).
+            provider = maybe_prompted(_default_factory(c), prompt)
+            return GuardedProvider(provider, cfg.tool_policy) if cfg.tool_policy is not None else provider
 
     return ModelRouter(policy, providers=preset, sink=sink, provider_factory=factory)
 
@@ -79,9 +85,16 @@ def serve_facade(
             ready = asyncio.run(state.check_ready(force=True))
         except Exception as exc:  # noqa: BLE001 — surface any backend problem as not-ready
             ready, state.ready_detail = False, str(exc)
+        from protea.serving.prompt import resolve_system_prompt
+
+        prompt = resolve_system_prompt(cfg.system_prompt, cfg.system_prompt_file)
         typer.echo(f"backend      {provider.name}:{provider.model}")
         typer.echo(f"served as    {cfg.served_model} (aliases {sorted(cfg.aliases)})")
         typer.echo(f"auth         {'bearer token required' if cfg.require_token else 'open'}")
+        source = cfg.system_prompt_file or "inline"
+        typer.echo(f"prompt       {f'{len(prompt)} chars from {source}' if prompt else 'none'}")
+        limit = f"{cfg.rate_limit_rpm} rpm/tenant" if cfg.rate_limit_rpm else "unlimited"
+        typer.echo(f"rate limit   {limit}")
         typer.echo(f"ready        {ready} ({state.ready_detail})")
         raise typer.Exit(0 if ready else 1)
     import uvicorn

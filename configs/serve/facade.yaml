@@ -10,6 +10,18 @@ drain_timeout_s: 30
 max_repairs: 1
 workers: 1
 
+# ADR-017: v0 is the frozen base + the guardrail prompt, so the product framing is part of the deployment,
+# not something each caller has to remember. The file wins over an inline `system_prompt`. `serve facade
+# --check` prints the resolved char count before you deploy, and the prompt is merged above any per-agent
+# system message the caller sends (so a marketplace agent's own instructions still apply underneath).
+system_prompt_file: configs/evaluation/guardrail-system-prompt.md
+
+# Per-tenant ceiling across /v1/*, in-process per replica (serving/ratelimit.py). This is a blast-radius
+# limit, not a billing quota: it stops one caller consuming the engine. Tune it from `serve loadtest` on the
+# real GPU before a partner routes production traffic here.
+rate_limit_rpm: 600
+rate_limit_burst: 60
+
 # Tool-permission guard (serving/guard.py): applied to every model response, self-hosted or frontier.
 # Denied patterns never reach a tool runtime whatever the model was told; limits turn an over-limit call
 # into an escalation; confidential system-prompt lines never come back out.
