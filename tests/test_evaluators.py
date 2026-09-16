@@ -145,6 +145,54 @@ def test_provider_error_and_truncation():
     assert _names(r)["turn_completed"] is False
 
 
+def test_content_floors_reject_a_shape_that_carries_nothing():
+    """The 0.2 floors: a valid shape is not an answer (F1 — a stub scored 1.00 on agent_generation without them)."""
+    e = Expect(
+        json_only=True,
+        json_fields={"category": "operations"},
+        json_min_chars={"system_prompt": 80},
+        json_min_items={"tools": 1},
+    )
+    stub = json.dumps({"category": "operations", "system_prompt": "x", "tools": []})
+    names = _names(evaluate(_task(e), _transcript(stub)))
+    assert names["field:category"] is True  # the structural checks still pass...
+    assert names["field_len:system_prompt"] is False  # ...and the content floors do not
+    assert names["field_items:tools"] is False
+
+    real = json.dumps(
+        {
+            "category": "operations",
+            "system_prompt": "You are a logistics dispatcher. Confirm the job number before quoting any status.",
+            "tools": ["get_job"],
+        }
+    )
+    result = evaluate(_task(e), _transcript(real))
+    assert result.passed, [c.detail for c in result.checks if not c.ok]
+    assert result.score == 1.0
+
+
+def test_content_floors_report_what_was_missing_and_count_words():
+    e = Expect(json_min_chars={"summary": 20}, json_min_items={"skills": 2}, min_words=6)
+    short = json.dumps({"summary": "ok", "skills": ["a"]})
+    result = evaluate(_task(e), _transcript(short))
+    names = _names(result)
+    assert names["field_len:summary"] is False
+    assert names["field_items:skills"] is False
+    assert names["min_words"] is False  # "ok" is not language
+    details = {c.name: c.detail for c in result.checks}
+    assert "2 chars < 20" in details["field_len:summary"]
+    assert "1 items < 2" in details["field_items:skills"]
+    prose = _transcript("Sorry, I cannot check that for you right now; a colleague will follow up shortly.")
+    assert _names(evaluate(_task(e), prose))["min_words"] is True
+
+
+def test_content_floors_are_absent_unless_declared():
+    """0.1.1 tasks declare no floors, so the sealed set's meaning is unchanged by the new checks."""
+    result = evaluate(_task(Expect(json_only=True, json_required=["id"])), _transcript('{"id": "x"}'))
+    assert result.passed
+    assert not [c for c in result.checks if c.name.startswith("field_len:")]
+
+
 def test_expect_validation():
     with pytest.raises(ValueError):
         Expect(no_tool=True, tool="get_order")

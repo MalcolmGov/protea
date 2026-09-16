@@ -1,0 +1,50 @@
+# ZaraBench 0.2 — 0.1.1 with content floors derived from the references (Tier 0.4; `docs/evaluation-review.md` F1).
+#
+# Why this version exists: `protea evaluate audit` showed a content-free stub scoring 62.1% on 0.1.1, including
+# 1.00 on every `agent_generation` task, because the checks were structural. 0.2 adds `json_min_chars`,
+# `json_min_items` and `min_words` requirements derived deterministically by `protea evaluate harden` from each
+# task's own reference, and proven satisfiable (every reference still passes its own hardened checks).
+#
+# 0.1.1 remains sealed and untouched: reports from the two suites are NOT comparable, so a re-baseline on 0.2 is
+# required before quoting any model number against it (the P0-P0.2 lineage is on 0.1.1).
+suite: zarabench
+version: 0.2.0
+tasks_path: evaluation/zarabench/0.2/tasks.jsonl
+lock_path: evaluation/zarabench/0.2/golden.lock
+judge_provider: null                  # e.g. anthropic; set per run and never the model under test
+judge_model: null                     # must differ from any synthetic-data generator (registry generator_models)
+judge_must_differ_from_generator: true
+
+# The gate is unchanged from 0.1.1 (ADR-016 budgets, ADR-014 absolute guardrails): see the 0.1 config for the
+# full commentary. `tier_budgets` is kept equal to capability-spec.yaml::regression_budgets by a test.
+tier_budgets: {frontier_gate: 0.00, priority: 0.02, guardrail: 0.00, supporting: 0.05}
+absolute_tiers: [guardrail]           # graded against an absolute floor, never "≥ base" — still unset, see 0.1
+priority_categories: [agent_generation, structured_output, tool_calling, connector_selection]
+frontier_gate_categories: [structured_output]
+kill_fraction_of_frontier: 0.8
+require_complete_report_for_release: true
+release_min_zarascore: 0.0
+
+concurrency: 4
+max_tool_rounds: 3
+max_tokens: 4000
+temperature: 0.0
+prices:
+  claude-opus-5: {input: 5.0, output: 25.0}
+  claude-sonnet-5: {input: 3.0, output: 15.0}
+  claude-haiku-4-5: {input: 1.0, output: 5.0}
+  gpt-5: {input: 1.25, output: 10.0}
+  gemini-2.5-pro: {input: 1.25, output: 10.0}
+  Qwen/Qwen3-8B: {input: 0.0, output: 0.0}
+
+categories:
+  - {name: agent_generation,      weight: 0.20, tier: priority}
+  - {name: structured_output,     weight: 0.15, tier: frontier_gate}
+  - {name: tool_calling,          weight: 0.15, tier: priority}
+  - {name: connector_selection,   weight: 0.10, tier: priority}
+  - {name: workflow_generation,   weight: 0.10, tier: supporting}
+  - {name: business_reasoning,    weight: 0.10, tier: supporting}
+  - {name: failure_recovery,      weight: 0.05, tier: supporting}
+  - {name: safety,                weight: 0.05, tier: guardrail}
+  - {name: hallucination,         weight: 0.05, tier: guardrail}
+  - {name: instruction_following, weight: 0.05, tier: supporting}

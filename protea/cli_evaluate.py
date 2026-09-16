@@ -159,6 +159,48 @@ def evaluate_author_citizen(
     )
 
 
+@evaluate_app.command("harden")
+def evaluate_harden(
+    source: Path = typer.Option(DEFAULT_CONFIG, exists=True, help="The suite config to harden from (its tasks_path is read)."),
+    out: Path = typer.Option(Path("evaluation/zarabench/0.2/tasks.jsonl"), help="Where the hardened task set is written."),
+    root: Path = typer.Option(Path(".")),
+    floor_chars: int = typer.Option(80, help="Every content-bearing string field must reach this, whatever the reference."),
+    keep_chars: float = typer.Option(0.10, help="...and this share of the reference's own length."),
+    cap_chars: int = typer.Option(400, help="...capped here, so the budget stays inside max_tokens."),
+    floor_words: int = typer.Option(12, help="A prose answer below this many words is a placeholder."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print the derivation and stop before writing."),
+) -> None:
+    """Derive content floors from a suite's references and write the next suite version (Tier 0.4, F1).
+
+    The sealed set is never edited: this reads it, derives a floor per field from each reference, proves every
+    reference still passes its own (now stricter) checks, and writes a new task set for `evaluate seal`.
+    """
+    from protea.evaluation.harden import HardenRules, check_references_pass, harden
+    from protea.evaluation.tasks import write_tasks
+
+    cfg, _config_hash, tasks, _task_hash = _load(source, root)
+    rules = HardenRules(
+        floor_chars=floor_chars, keep_chars=keep_chars, cap_chars=cap_chars, floor_words=floor_words
+    )
+    hardened, report = harden(tasks, rules)
+    typer.echo(report.summary())
+    if report.examples:
+        typer.echo("\nderived (first lines):" + "".join(f"\n  {line}" for line in report.examples))
+    failures = check_references_pass(hardened)
+    if failures:
+        _fail(
+            "references that no longer pass their own hardened checks (the suite must stay satisfiable):\n  "
+            + "\n  ".join(failures[:20])
+        )
+    typer.echo(f"\nevery reference still passes ({len(hardened)} tasks)")
+    if dry_run:
+        typer.echo("dry run: nothing written")
+        return
+    write_tasks(hardened, root / out)
+    typer.echo(f"wrote {len(hardened)} tasks to {out}")
+    typer.echo(f"next: point a config at it (suite {cfg.suite}, version 0.2.0) and run `protea evaluate seal`")
+
+
 @evaluate_app.command("audit")
 def evaluate_audit(
     config: Path = typer.Option(DEFAULT_CONFIG, exists=True),
