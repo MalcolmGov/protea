@@ -70,6 +70,7 @@ class RunPodAdapter(RemoteAdapter):
             "PROTEA_BASE_MODEL",
             "PROTEA_BASE_REVISION",
             "PROTEA_EVAL_CONFIG",
+            "PROTEA_EVAL_MAX_MINUTES",  # the eval's own runtime cap; the plan's is the training budget
             "PROTEA_EVAL_PER_CATEGORY",
             "PROTEA_EVAL_CATEGORIES",
             "PROTEA_EVAL_SYSTEM_PROMPT_FILE",

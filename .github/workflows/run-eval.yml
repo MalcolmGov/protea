@@ -38,6 +38,10 @@ on:
         options:
           - configs/evaluation/zarabench-0.2.yaml
           - configs/evaluation/zarabench-0.1.yaml
+      eval_max_minutes:
+        description: Runtime cap for the eval, in minutes. Without it the entrypoint inherits the training config's budget (300 min). A host that cannot see CUDA is now refused in about a minute instead of scoring on CPU.
+        required: true
+        default: "120"
       per_category:
         description: Tasks per category (a quick deterministic sample), or 'full' for the whole 206-task suite — the real baseline. Blank does NOT mean full; pick 'full'.
         required: true
@@ -167,6 +171,7 @@ jobs:
           PROTEA_BASE_MODEL: ${{ inputs.base_model }}
           PROTEA_BASE_REVISION: ${{ inputs.base_revision }}
           PROTEA_EVAL_CONFIG: ${{ inputs.eval_config }}
+          PROTEA_EVAL_MAX_MINUTES: ${{ inputs.eval_max_minutes }}
           PROTEA_EVAL_PER_CATEGORY: ${{ inputs.per_category }}
           PROTEA_EVAL_CATEGORIES: ${{ inputs.categories }}
           PROTEA_EVAL_SYSTEM_PROMPT_FILE: ${{ inputs.system_prompt_file }}
