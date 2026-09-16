@@ -94,6 +94,12 @@ The gate is `protea evaluate compare`. Blocking checks:
 
 Advisory, never blocking: a **strict pass rate** below base's. A rising mean can hide growing hard failures — that was the P0.1 anomaly (pass rate 8% → 16% while the mean fell 72 → 56) — so it is surfaced next to the decision.
 
+**Which number the gate judges is config**: `gate_metric: score | strict`. 0.1.1 uses `score` so its committed
+reports keep their meaning; **0.2 uses `strict`**, because partial credit stays shape-dominated even with content
+floors (a stub takes 47.9% of the score but 5.8% strict). Under `strict`, the priority checks, the derived floors
+and the kill criterion all use pass rates, and the pass-rate advisory is dropped (it *is* the gate). `compare`
+names the metric in its verdict line.
+
 ## Task file format
 
 One `EvalTask` per line (`protea/evaluation/tasks.py`): `id`, `category`, `language`, `family`, `source` (repo, commit, path, id), `messages` (system + first user turn), `followups`, `tools`, `tool_results` (canned results per tool, cycled), `expect`, `reference`. Every task in 0.1 has a reference; 43 also need a judge.

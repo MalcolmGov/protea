@@ -207,24 +207,69 @@ Tiers are ordered by information gained per dollar. **Tier 0 costs nothing and g
 18. **Protect comparability.** Every suite change re-baselines everything; keep a frozen comparability set.
 19. **Decide the tenancy model** for partners if the economic unit is an aggregated engine.
 
-## 6. Base model and hardware (decided 2026-09-16)
+## 6. Decisions (2026-09-16)
 
-**Decision:** the deliverable does **not** have to be an 8B model; **smaller is acceptable**. There is **no
-serving hardware available now**.
+Six calls, made in this pass. Each is recorded here, implemented in the config/code it names, and reversible if
+the evidence changes.
 
-Consequences:
+### 6.1 Base model — a two-tier ladder
 
-- **Tier 1's deployment steps are deferred**, not cancelled: nothing is served until a host exists. The free work
-  that improves the model (Tier 0) and the cheap rented-GPU runs (Tier 0.6, Tier 1.8, any training) do not need
-  your own hardware — GitHub Actions launches a rented pod, which self-stops.
-- **A smaller base makes the dev loop local.** At 1–4B, `local_hf` can run a real eval end-to-end on a laptop, so
-  Tier 0.4/0.5/0.6 and Tier 2.11 become same-day, no-GPU iterations. This is the strongest argument for the
-  smaller base, independent of serving cost.
-- **The 8B numbers become legacy.** B0 80.7% and the P0/P0.1/P0.2 lineage were measured on `Qwen3-8B`; if the
-  base changes, so does every floor (which is now automatic: floors derive from whichever baseline is passed) and
-  the ADR-016 budgets may need revisiting.
-- **Serving economics favour the smaller base** (§4): fewer tokens per second of GPU time and a smaller, cheaper
-  card move break-even volume down.
+**Decision:** `Qwen/Qwen3-4B` is the **v0 candidate for the sell-to-clients path**; `Qwen/Qwen3-1.7B` is the
+**local development model** (no GPU); `Qwen/Qwen3-8B` stays for work where capability outranks volume (the
+compiler task), with `Qwen/Qwen3-14B` as the scale-up.
+
+Why the 4B for v0: cost per turn is the commercial constraint and §4 shows the economics are volume-gated, so a
+10 GB-class card roughly halves the serving footprint and moves break-even volume down with it; the data budget is
+~1.2k rows, which is a better parameter-to-data ratio on a 4B than on an 8B; and it is the same family, chat
+template and `hermes` tool parser, so every config, prompt and eval transfers unchanged. Why the 1.7B: it makes
+the inner loop local (a subset run in minutes on a laptop), which is what the instrument work in Tier 0 needs.
+
+Configs: `configs/models/qwen3-4b.yaml`, `configs/models/qwen3-1.7b.yaml`, `configs/inference/vllm-qwen3-4b.yaml`.
+The 4B is *not* a downgrade of the 8B everywhere — the compiler task is low-volume and high-stakes, and that is
+what the 8B is for. 8B baselines (B0 80.7% and the P0–P0.2 lineage) remain the record for the 8B line only.
+
+### 6.2 Grading metric — strict on 0.2
+
+**Decision:** the gate on ZaraBench 0.2 judges the **strict pass rate**, not partial credit
+(`gate_metric: strict` in `configs/evaluation/zarabench-0.2.yaml`). Partial credit stays shape-dominated even
+after the content floors — a content-free stub takes 47.9% of the score but 5.8% strict — so the strict number is
+the only one that cannot be earned by a valid shape. Both are still reported; floors and the kill criterion
+follow the chosen metric. 0.1.1 keeps `score` so its committed reports keep their meaning.
+
+### 6.3 Judge policy — judge-free gate, judged language
+
+**Decision:** keep the gate **judge-free** (ADR-007 makes deterministic checks the source of truth) and stop
+treating a `partial` report as an automatic block: `require_complete_report_for_release: false` on 0.2, with the
+skipped-check count and the share of weight it covers reported on every decision. A judge is run only for the 10
+language checks, and only when a release is actually being considered.
+
+### 6.4 Guardrail floors — set from the baseline, not invented
+
+**Decision:** safety and hallucination get their absolute floors (ADR-014) **from the first 0.2 baseline of the
+chosen base model** — “at least what the shipping configuration already achieves” — and are then ratcheted. No
+number is invented ahead of the evidence; until then the comparison prints `not set — this tier is unfloored`.
+
+### 6.5 F10 — author the affirmative expectations, do not derive them
+
+**Decision:** close F10 by **authoring** what those categories must see, because the missing signal is
+*affirmative* — “the reply actually refused”, “the reply carried the grounded fact”, “the reply is in the right
+language” — and only the last of the three needs a judge. Scope: the 45 tasks in `safety`,
+`business_reasoning` and `instruction_following` need (a) an affirmative requirement taken from the behaviour
+the task already tests (for safety, a hand-off/refusal vocabulary the existing `says_any` mostly already
+carries) and (b) references that witness it, since today’s references are the authoring template and would fail
+their own new check. This is content authoring with a verification step, not another derivation — which is why
+`evaluate harden` deliberately left those categories alone.
+
+### 6.6 Hardware
+
+**No serving hardware is available now**, so Tier 1's deployment steps stay deferred. The free work (Tier 0) and
+the rented-GPU runs do not need it: GitHub Actions launches a pod that self-stops.
+
+Deployment therefore waits on a host (Tier 1), while the model work does not: everything in Tier 0 and every
+rented-GPU run is reachable from a laptop, and the 4B/1.7B ladder makes the inner loop local. When the base
+changes, the floors follow automatically — they are derived from whichever baseline is passed in — but the 8B
+line's numbers (B0 80.7%, the P0–P0.2 rungs) stay the record for the 8B line only and must not be mixed with a
+4B result.
 
 ## 7. Landed in this pass
 
@@ -239,33 +284,31 @@ Consequences:
 | **Product prompt wiring** (ADR-017 was specified but not implemented in serving) | `protea/serving/prompt.py`, `protea/serving/app.py`, `protea/cli_serve.py`, `configs/serve/facade.yaml` | `serve facade --check` → `prompt 1405 chars from configs/evaluation/guardrail-system-prompt.md`; merged above the caller's own system prompt |
 | **Per-tenant rate limiting** (429 + `retry-after`, metric, ops endpoints exempt) | `protea/serving/ratelimit.py` | `tests/test_serving.py` |
 | **Canary-echo hardening** of the guardrail prompt | `configs/evaluation/guardrail-system-prompt.md` | closes the Exp 0 `says_none` failure |
+| **Decisions landed as config/code** — `gate_metric: strict`, `require_complete_report_for_release: false` and the guardrail-floor policy on 0.2; the base ladder (`qwen3-4b`, `qwen3-1.7b`, `vllm-qwen3-4b`) | `protea/config/models.py`, `protea/evaluation/report.py`, `configs/evaluation/zarabench-0.2.yaml`, `configs/models/`, `configs/inference/` | `tests/test_runner_report.py` (strict gating and strict floor derivation); `config validate configs` 33 ok |
 | **Corrections**: the "unsatisfiable tasks" claim, the gate description, and the kill-criterion defect | `docs/experiments/agent-generation-rootcause.md`, `docs/zarabench.md` | dated correction + the audit |
 
-Checks: `pytest` 300 passed / 2 skipped, `ruff check .` clean, `protea config validate configs` ok,
-`protea evaluate verify` ok, `protea security verify` ok, `protea evaluate run --provider reference` 1.000,
-`protea serve facade --check` ready.
+Checks: `pytest` 313 passed / 2 skipped, `ruff check .` clean, `protea config validate configs` 33 ok,
+`protea evaluate verify` ok on both suites, `protea security verify` ok, reference runs 1.000 on both suites,
+`protea evaluate audit` within its CI ceiling, `protea serve facade --check` ready.
 
 **Ordering consequence:** editing the guardrail prompt changes the product-config hash, and the gate now derives
 floors from whichever baseline it is given. So the sequence is: pick the base (§6) → Tier 0.4 content checks →
 Tier 0.6 re-baseline → then, and only then, quote a guardrail or adapter number.
 
-## 8. What needs a decision
+## 8. What remains
 
-1. **Which base model** (§6): a 1–4B model for a local dev loop and cheaper serving, or stay on `Qwen3-8B`? This
-   gates the baseline, the floors and the data budget.
-2. **Grading policy on 0.2** — the suite now has content floors, and its partial-credit score is still
-   shape-dominated (a stub takes 47.9% while the strict pass rate is 5.8%). Decide whether ADR-016's budgets are
-   applied to the score or to the strict pass rate on 0.2 comparisons; the strict variant is the honest one.
-3. **Close F10** — author realistic answers and per-language refusal expectations for `safety`,
-   `business_reasoning` and `instruction_following`, or run a judge for those categories. This is the last of the
-   free band and it is authoring work, not derivation.
-4. **Absolute guardrail floors** (ADR-014): safety and hallucination must be graded against an absolute floor,
-   never the base, and none is set — so the comparison prints `not set — this tier is unfloored`. Pick the numbers
-   (e.g. safety ≥ the post-prompt 82.1% the prompt already achieves; hallucination ≥ a target above the base's
-   34.4%) and put them in `min_score` on those two categories.
-5. **Judge policy** (Tier 0.5): run a judge (with a judged baseline) for the 43 judge-dependent tasks, or accept
-   the deterministic subset explicitly with `require_complete_report_for_release: false`.
-6. **The ~$2 rented-GPU run** (Tier 0.6 / Tier 1.8) once a base is chosen — the first evidence from the shipping
-   configuration, and it does not need your hardware. Note it now needs a **0.2** baseline: 0.1.1 reports are not
-   comparable with the hardened suite.
-7. **The C4 reframing** (Tier 3.17): runtime turn model first, or keep compiler-first?
+The six judgements are made (§6). What is left is execution, in this order:
+
+1. **Close F10** (§6.5) — author the affirmative expectations and witnesses for the 45 template-graded tasks.
+   Highest-value free work left, and it is what makes a safety or language floor mean anything.
+2. **The 0.2 baseline** on the chosen base — one rented-GPU run (~$2, quoted before dispatch), covering the
+   shipping configuration (thinking off + the guardrail prompt) so the number describes what ships. Needs a 0.2
+   report: 0.1.1 is not comparable with the hardened suite.
+3. **Then set the guardrail floors** from that baseline (§6.4), and ratchet them.
+4. **Tier 1 deployment** waits on a host: PR #54, the facade in front of the engine, one routed task type, and
+   `serve loadtest` to replace the assumed 900 tok/s with a measured number.
+5. **Tier 2** (training) resumes only on a suite that can measure it: constrained decoding measured first, then
+   `assistant_only_loss`, then DPO from the validation gate, then data for the gaps (hallucination,
+   `failure_recovery`, non-English) rather than another blend of the categories that are already at ceiling.
+6. **The C4 reframing** (Tier 3.17) — decide runtime-turn-first explicitly, now that the base model and the
+   economics both point that way.
