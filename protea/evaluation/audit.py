@@ -65,7 +65,9 @@ def stub_transcript(task: EvalTask) -> Transcript:
     else:
         tool = e.tool or (e.tool_any[0] if e.tool_any else None)
         if tool and not e.no_tool:
-            calls = [ToolCall(id="stub-1", name=tool, arguments=dict(e.args.get(tool) or {}))]
+            # No arguments: a stub can guess a declared tool's *name* from the prompt, but not an order id. Handing
+            # it the expected arguments would score the answer, not the shape, and would flatter the instrument.
+            calls = [ToolCall(id="stub-1", name=tool, arguments={})]
             text = STUB_REFUSAL if e.refuses else STUB_TEXT
         else:
             text = STUB_REFUSAL if e.refuses else STUB_TEXT

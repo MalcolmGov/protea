@@ -7,6 +7,7 @@ without one they are reported as skipped rather than scored, so a run never sile
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -63,7 +64,19 @@ def _norm(text: str) -> str:
 
 
 def _phrase_in(phrase: str, text: str) -> bool:
-    return _norm(phrase) in text
+    """Is `phrase` present in the (already normalised) `text`?
+
+    A single alphanumeric token is matched on word boundaries, because plain substring matching made the suite
+    accidentally generous: `id` matched inside "gu*i**d**ance", `30` inside "3000", `10` inside "2010". Phrases
+    with spaces or punctuation ("8 op hande", "can't", "$194") stay substring matches, which is what those
+    expectations mean. Changed in ZaraBench 0.2 — see the changelog.
+    """
+    needle = _norm(phrase)
+    if not needle:
+        return False
+    if needle.isalnum() and " " not in needle:
+        return re.search(rf"(?<![a-z0-9]){re.escape(needle)}(?![a-z0-9])", text) is not None
+    return needle in text
 
 
 def _unfence(text: str) -> str:
@@ -169,6 +182,19 @@ def _text_checks(e: Expect, text: str) -> list[Check]:
     if e.min_words is not None:
         n = len(text.split())
         checks.append(Check(name="min_words", ok=n >= e.min_words, detail=f"{n} words < {e.min_words}"))
+    if e.refuses_any:
+        hit = [p for p in e.refuses_any if _phrase_in(p, norm)]
+        checks.append(
+            Check(name="refuses_any", ok=bool(hit), detail="" if hit else f"none of {e.refuses_any}")
+        )
+    if e.must_any:
+        hit = [p for p in e.must_any if _phrase_in(p, norm)]
+        checks.append(Check(name="must_any", ok=bool(hit), detail="" if hit else f"none of {e.must_any}"))
+    if e.lang_markers:
+        hit = [p for p in e.lang_markers if _phrase_in(p, norm)]
+        checks.append(
+            Check(name="lang_markers", ok=bool(hit), detail="" if hit else f"none of {e.lang_markers}")
+        )
     return checks
 
 

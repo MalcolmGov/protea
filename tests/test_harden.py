@@ -51,7 +51,7 @@ def test_derives_length_and_item_floors_from_the_reference():
     hardened, lines = harden_task(_json_task())
     expect = hardened.expect
     # 206 chars of reference is below the keep-fraction threshold, so the absolute floor governs
-    assert expect.json_min_chars["system_prompt"] == 80
+    assert expect.json_min_chars["system_prompt"] == 40
     assert expect.json_min_items["tools"] == 1
     assert any("field_len:system_prompt" in line for line in lines)
     # the floors are strict enough to reject the stub shape that motivated this

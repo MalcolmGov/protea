@@ -34,9 +34,12 @@ from protea.evaluation.tasks import EvalTask
 class HardenRules:
     """Thresholds for the derived floors. Defaults are deliberately conservative (a floor, not a target)."""
 
-    floor_chars: int = 80  # any content-bearing string field must reach this, whatever the reference
-    keep_chars: float = 0.10  # ...and one tenth of the reference's own length
-    cap_chars: int = 400  # ...but never demand more than this per field (the eval budget is 4000 tokens)
+    # The floor exists to kill tokens like `"x"`, not to demand length. It is the same as `substantial_chars`, so
+    # a field the rule already accepted can always satisfy the floor it then gets — a floor above the reference's
+    # own length would make the suite unsatisfiable, which is how the 80 this started as was caught.
+    floor_chars: int = 40
+    keep_chars: float = 0.10  # ...plus one tenth of the reference's own length
+    cap_chars: int = 400  # ...capped here, so a long reference never demands a long answer
     substantial_chars: int = 40  # below this the reference is not evidence of a content-bearing field
     min_items: int = 1  # a reference list with items means the answer needs items
     floor_words: int = 12  # a prose answer of fewer words is a placeholder
@@ -44,7 +47,9 @@ class HardenRules:
     cap_words: int = 60
 
     def min_chars_for(self, reference_length: int) -> int:
-        return max(self.floor_chars, min(self.cap_chars, int(self.keep_chars * reference_length)))
+        """Never above the reference's own length: a floor the witness cannot reach is a broken task."""
+        derived = max(self.floor_chars, min(self.cap_chars, int(self.keep_chars * reference_length)))
+        return min(derived, reference_length)
 
     def min_words_for(self, reference_words: int) -> int:
         return max(1, min(self.floor_words, int(self.cap_words), reference_words))

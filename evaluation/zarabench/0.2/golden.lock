@@ -2,7 +2,7 @@
   "suite": "zarabench",
   "version": "0.2.0",
   "tasks_path": "evaluation/zarabench/0.2/tasks.jsonl",
-  "sha256": "6d3dc61c4ee190c66be1385251448e4e8f2c355c0abfad72297c784948d7ee61",
+  "sha256": "cfb3476777761170a949dce85e1b4a2d024e3d843c6bdde1b8ba568099fc2b1f",
   "count": 206,
   "by_category": {
     "agent_generation": 25,
@@ -55,5 +55,5 @@
     "utility-billing",
     "watchlist"
   ],
-  "sealed_at": "2026-09-16T12:40:57.619376+00:00"
+  "sealed_at": "2026-09-16T12:55:55.269993+00:00"
 }

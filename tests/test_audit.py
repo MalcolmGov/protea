@@ -86,7 +86,9 @@ def test_stub_emits_the_expected_tool_call_but_no_knowledge():
     )
     transcript = stub_transcript(task)
     assert [c.name for c in transcript.tool_calls] == ["get_order"]
-    assert transcript.tool_calls[0].arguments == {"order_id": "7"}
+    # no arguments: a stub can guess a declared tool's name, not an order id. Handing it the expected arguments
+    # would score the answer instead of the shape, and would flatter the instrument.
+    assert transcript.tool_calls[0].arguments == {}
     assert "order" not in transcript.final_text.lower()  # no facts, ever
 
     refused = stub_transcript(_task("tool/2", SHAPE, Expect(no_tool=True, refuses=True)))

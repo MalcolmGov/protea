@@ -164,17 +164,21 @@ def evaluate_harden(
     source: Path = typer.Option(DEFAULT_CONFIG, exists=True, help="The suite config to harden from (its tasks_path is read)."),
     out: Path = typer.Option(Path("evaluation/zarabench/0.2/tasks.jsonl"), help="Where the hardened task set is written."),
     root: Path = typer.Option(Path(".")),
-    floor_chars: int = typer.Option(80, help="Every content-bearing string field must reach this, whatever the reference."),
+    floor_chars: int = typer.Option(40, help="Every content-bearing string field must reach this, whatever the reference."),
     keep_chars: float = typer.Option(0.10, help="...and this share of the reference's own length."),
     cap_chars: int = typer.Option(400, help="...capped here, so the budget stays inside max_tokens."),
     floor_words: int = typer.Option(12, help="A prose answer below this many words is a placeholder."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Print the derivation and stop before writing."),
 ) -> None:
-    """Derive content floors from a suite's references and write the next suite version (Tier 0.4, F1).
+    """Harden a suite: authored expectations first, then content floors derived from the new witnesses.
 
-    The sealed set is never edited: this reads it, derives a floor per field from each reference, proves every
-    reference still passes its own (now stricter) checks, and writes a new task set for `evaluate seal`.
+    Two passes, in this order for a reason. `affirm` supplies what a derivation cannot — the affirmative
+    requirements a "never do X" check lacks, and a witness that carries them (Tier 0.4b, F10). `harden` then
+    derives its length floors from those witnesses rather than from the authoring placeholders they replaced.
+    The sealed set is never edited: this reads it, proves every reference still passes its own (now stricter)
+    checks, and writes a new task set for `evaluate seal`.
     """
+    from protea.evaluation.affirm import affirm
     from protea.evaluation.harden import HardenRules, check_references_pass, harden
     from protea.evaluation.tasks import write_tasks
 
@@ -182,8 +186,10 @@ def evaluate_harden(
     rules = HardenRules(
         floor_chars=floor_chars, keep_chars=keep_chars, cap_chars=cap_chars, floor_words=floor_words
     )
+    tasks, affirm_report = affirm(tasks)
+    typer.echo(affirm_report.summary())
     hardened, report = harden(tasks, rules)
-    typer.echo(report.summary())
+    typer.echo("\n" + report.summary())
     if report.examples:
         typer.echo("\nderived (first lines):" + "".join(f"\n  {line}" for line in report.examples))
     failures = check_references_pass(hardened)
