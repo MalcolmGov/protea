@@ -14,7 +14,9 @@ have told us if it were**. v0 is a stock `Qwen/Qwen3-8B` plus a system prompt, u
 lost to the frozen base, and the benchmark that decided that:
 
 - cannot separate a frontier model from the base (F2), and
-- **awards 62.1% to a content-free stub — 100% of `agent_generation`, the highest-weighted category (F1).**
+- **awarded 62.1% to a content-free stub — 100% of `agent_generation`, the highest-weighted category (F1).**
+  ZaraBench 0.2, added in this pass, cuts that to **47.9%** (**5.8% strict**) with no category fully satisfied by
+  a stub; the residual is the judge-skipped, template-graded categories (F10).
 
 So the honest reading of "both adapters lose to base" is not yet "training did not work" — it is that the score
 being optimised was, in large part, shape rather than capability. Selling this as "a capable model that saves
@@ -54,6 +56,13 @@ distinguish a stub from a production-ready spec. `failure_recovery` and `safety`
 Consequences to carry forward: a ZaraScore must be quoted **with its floor**; small rung-to-rung deltas (< ~2
 points) are inside the free band; and any further training spend should wait until the hollow categories carry
 content checks.
+
+> **Update (2026-09-16) — partially closed by ZaraBench 0.2.** `protea evaluate harden` derives content floors
+> from each task's own reference and writes a new suite version; every reference is proved still to pass. The stub
+> floor falls **62.1% → 47.9%**, the **strict** floor **37.5% → 5.8%**, `agent_generation` goes from 25/25 full
+> marks to 0/25, and no category is fully satisfied by a stub. The remaining band is judge-skipped categories
+> (F10) and, because partial credit is still shape-dominated on 0.2, **the strict pass rate is the honest number
+to quote**. 0.1.1 stays sealed for the P0–P0.2 lineage; the two versions are not comparable.
 
 **F2 — The benchmark does not separate a frontier model from the base.** Sonnet 5 scored **80.9%**; `Qwen3-8B`
 scored **80.7%**, and the base *wins* the configured `frontier_gate` category `structured_output` (96.9% vs
@@ -110,6 +119,18 @@ missing the 0.2.1/0.2.2 sets that were trained. ADR-004 calls the registry the s
 against a GPU engine in this repo's history, and there is no production traffic, observability or consent
 plumbing in `aria`. With no standing host (see §6), this stays blocked by choice, not by code.
 
+**F10 — Several categories are graded by a phrase match against a template.** `authoring.py:192` synthesises a
+reference from the task's own expectation when no example text exists:
+`f"Thanks for reaching out. {says_any[0]}. Let me know if there is anything else I can do."`. Every reference in
+`safety`, `business_reasoning` and `instruction_following` is that template (verified: 16, 16 and 11 words
+respectively; safety is English-only despite the suite carrying non-English slices elsewhere). Two consequences:
+a reference does not demonstrate that a realistic answer exists, and the deterministic grading in those
+categories reduces to *does the reply contain the expected phrase* plus *did it avoid the forbidden thing* — which
+a useless reply passes vacuously (that is the 0.82 / 0.51 / 0.57 residual in F1's table). Closing it needs
+authored expectations (a refusal vocabulary per language, real prose answers) or a judge, not a derivation. It is
+also why the hardening pass left those categories alone: a floor derived from a template would be a floor derived
+from nothing.
+
 ## 4. The commercial case (what the existing model says)
 
 `protea economics report` on `configs/economics/zara-v0.yaml`, at forecast (310,250 requests/month):
@@ -146,10 +167,10 @@ Tiers are ordered by information gained per dollar. **Tier 0 costs nothing and g
    policy. ✅ **done** (F3).
 3. **Correct the record** — the "six unsatisfiable tasks" claim in the root-cause doc is wrong and now carries a
    dated correction; the review and `zarabench.md` state the real defect. ✅ **done**.
-4. **Add content checks to the hollow categories** (`agent_generation`, `structured_output`, `failure_recovery`,
-   `safety`): require the fields the product actually needs — a non-trivial `system_prompt`/`guardrails`,
-   non-empty and declared tools, a hedge or refusal when the tool is missing — and re-measure the floor. This is a
-   suite change (ZaraBench 0.2), so it needs a re-baseline. **Next.**
+4. **Add content checks to the hollow categories** — ✅ **done as ZaraBench 0.2** (`evaluate harden`): stub
+   floor 62.1% → 47.9%, strict 37.5% → 5.8%, sealed and satisfiable, enforced in CI with `--max-zarascore 0.55`.
+   The residual band is F10 (judge-skipped and template-graded categories), which needs authored expectations or
+   a judge. Also decided by this work: **quote the strict pass rate** for 0.2 comparisons.
 5. **Commit a machine-readable baseline** for whichever base model is chosen (§6) so floors have an input, and
    decide the judge policy for the 43 judge-dependent tasks (run a judge with a judged baseline, or drop those
    checks from the score rather than silently skipping them).
@@ -211,7 +232,9 @@ Consequences:
 
 | Change | Where | Evidence |
 |---|---|---|
-| **`evaluate audit`** — the stub floor, deterministic, no model/GPU/judge, with `--json` and `--max-zarascore` for CI | `protea/evaluation/audit.py`, `protea/cli_evaluate.py` | stub ZaraScore **62.1%**; `tests/test_audit.py`, `tests/test_cli_phase3.py` |
+| **`evaluate audit`** — the stub floor, deterministic, no model/GPU/judge, with `--json` and `--max-zarascore` for CI | `protea/evaluation/audit.py`, `protea/cli_evaluate.py` | stub ZaraScore **62.1%** on 0.1.1; `tests/test_audit.py`, `tests/test_cli_phase3.py` |
+| **ZaraBench 0.2 — content floors** (`field_len:*`, `field_items:*`, `min_words` in the `Expect` grammar and the evaluators), derived from the references by `evaluate harden` | `protea/evaluation/harden.py`, `protea/evaluation/evaluators.py`, `protea/evaluation/tasks.py`, `evaluation/zarabench/0.2/`, `configs/evaluation/zarabench-0.2.yaml` | stub floor 62.1% → **47.9%** (strict 37.5% → **5.8%**); `agent_generation` full marks 25/25 → 0/25; every reference still passes; `tests/test_harden.py`, `tests/test_evaluators.py` |
+| **CI guards both suites** — 0.2 sealed + satisfiable, and the floor pinned with `--max-zarascore 0.55` | `.github/workflows/ci.yml` | local run of every step |
 | **ADR-016 as executable policy** — `tier_budgets` in config, floors derived per baseline, cross-version comparisons refused, partial policy explicit, strict-pass-rate advisory | `protea/config/models.py`, `protea/evaluation/report.py`, `configs/evaluation/zarabench-0.1.yaml` | `tests/test_runner_report.py`; `evaluate compare` prints every floor with its arithmetic |
 | **Product prompt wiring** (ADR-017 was specified but not implemented in serving) | `protea/serving/prompt.py`, `protea/serving/app.py`, `protea/cli_serve.py`, `configs/serve/facade.yaml` | `serve facade --check` → `prompt 1405 chars from configs/evaluation/guardrail-system-prompt.md`; merged above the caller's own system prompt |
 | **Per-tenant rate limiting** (429 + `retry-after`, metric, ops endpoints exempt) | `protea/serving/ratelimit.py` | `tests/test_serving.py` |
@@ -230,14 +253,19 @@ Tier 0.6 re-baseline → then, and only then, quote a guardrail or adapter numbe
 
 1. **Which base model** (§6): a 1–4B model for a local dev loop and cheaper serving, or stay on `Qwen3-8B`? This
    gates the baseline, the floors and the data budget.
-2. **Content checks + ZaraBench 0.2** (Tier 0.4) — the highest-value free work left, and a suite change that
-   re-baselines everything. Approve the approach (what each hollow category must require).
-3. **Absolute guardrail floors** (ADR-014): safety and hallucination must be graded against an absolute floor,
+2. **Grading policy on 0.2** — the suite now has content floors, and its partial-credit score is still
+   shape-dominated (a stub takes 47.9% while the strict pass rate is 5.8%). Decide whether ADR-016's budgets are
+   applied to the score or to the strict pass rate on 0.2 comparisons; the strict variant is the honest one.
+3. **Close F10** — author realistic answers and per-language refusal expectations for `safety`,
+   `business_reasoning` and `instruction_following`, or run a judge for those categories. This is the last of the
+   free band and it is authoring work, not derivation.
+4. **Absolute guardrail floors** (ADR-014): safety and hallucination must be graded against an absolute floor,
    never the base, and none is set — so the comparison prints `not set — this tier is unfloored`. Pick the numbers
    (e.g. safety ≥ the post-prompt 82.1% the prompt already achieves; hallucination ≥ a target above the base's
    34.4%) and put them in `min_score` on those two categories.
-4. **Judge policy** (Tier 0.5): run a judge (with a judged baseline) for the 43 judge-dependent tasks, or accept
+5. **Judge policy** (Tier 0.5): run a judge (with a judged baseline) for the 43 judge-dependent tasks, or accept
    the deterministic subset explicitly with `require_complete_report_for_release: false`.
-5. **The ~$2 rented-GPU run** (Tier 0.6 / Tier 1.8) once a base is chosen — the first evidence from the shipping
-   configuration, and it does not need your hardware.
-6. **The C4 reframing** (Tier 3.17): runtime turn model first, or keep compiler-first?
+6. **The ~$2 rented-GPU run** (Tier 0.6 / Tier 1.8) once a base is chosen — the first evidence from the shipping
+   configuration, and it does not need your hardware. Note it now needs a **0.2** baseline: 0.1.1 reports are not
+   comparable with the hardened suite.
+7. **The C4 reframing** (Tier 3.17): runtime turn model first, or keep compiler-first?
