@@ -57,10 +57,18 @@ hallucination. Those are the levers for P0.
   on the deterministic subset until a **judged baseline** exists. A judged B0 (an LLM judge that differs from the
   model under test and from any synthetic-data generator — ADR-007/ADR-013 permit Claude/GPT to *judge*, never
   to generate training data) is the follow-up that makes the safety and language floors real.
-- **Enforcement is deferred, the policy is not.** Wiring the floor computation (`baseline − budget`) into
-  `protea evaluate compare` and the release config is the graduation step (ADR-014); this ADR fixes the policy
-  and the anchor so that wiring is mechanical. Until then the eval config's per-category `min_score` stay `0.0`
-  and a release is still gated by "report not partial" + the security suite, never by training loss.
+- **Enforcement landed 2026-09-16** (this bullet previously said it was deferred). The floor computation is
+  now wired: `tier_budgets` in `configs/evaluation/zarabench-0.1.yaml` carry the policy (kept equal to
+  `capability-spec.yaml::regression_budgets` by a test), `EvaluationConfig.category_floors` derives
+  `baseline − budget` at compare time, an explicit `min_score` still acts as an absolute floor, and a
+  cross-version comparison is refused rather than scored. Two properties of this ADR are respected by the
+  implementation: the per-category floors are computed, never typed, so swapping the base re-derives them; and
+  `guardrail` is listed in `absolute_tiers`, so safety and truthfulness are **not** graded against the base —
+  they need an explicit absolute `min_score`, which is an open decision (`docs/evaluation-review.md` §8).
+- **A budget is only as meaningful as the category it polices.** `protea evaluate audit` measures the suite's
+  floor — a content-free stub scores **62.1%** overall and **1.00 on every `agent_generation` task**
+  (2026-09-16), because that category's checks are structural. A within-budget result on such a category says
+  little; the instrument fix comes before more training spend (F1 in `docs/evaluation-review.md`).
 - **Open item — the machine baseline.** Only the human-readable `.md` baseline is committed; the machine
   `base.json` that `evaluate compare` consumes remains canonical in object storage (R2). The GitHub-logs path
   truncates a 206-task report, so the clean way to land `base.json` in the repo is to have the fetch workflow
