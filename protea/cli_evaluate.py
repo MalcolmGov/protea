@@ -159,6 +159,38 @@ def evaluate_author_citizen(
     )
 
 
+@evaluate_app.command("audit")
+def evaluate_audit(
+    config: Path = typer.Option(DEFAULT_CONFIG, exists=True),
+    root: Path = typer.Option(Path(".")),
+    as_json: bool = typer.Option(False, "--json"),
+    max_zarascore: float | None = typer.Option(
+        None,
+        "--max-zarascore",
+        help="Exit 2 when the stub floor exceeds this share (e.g. 0.40 once the suite is tightened). Report-only by default.",
+    ),
+) -> None:
+    """Score a content-free stub on the sealed suite: the floor of the instrument (no model, no GPU, no judge).
+
+    A ZaraScore is only quotable if a stub cannot reach it. Run this next to `evaluate verify` before drawing a
+    conclusion from any run, and re-run it after changing an evaluator — a fix that lowers the floor is a fix.
+    """
+    from protea.evaluation.audit import audit
+
+    cfg, _config_hash, tasks, _task_hash = _load(config, root)
+    result = audit(tasks, cfg)
+    if as_json:
+        typer.echo(json.dumps(result.model_dump(), indent=2))
+    else:
+        typer.echo(result.render(), nl=False)
+    if max_zarascore is not None and result.stub_zarascore > max_zarascore:
+        _fail(
+            f"stub floor {result.stub_zarascore:.1%} exceeds --max-zarascore {max_zarascore:.1%}: "
+            "this suite cannot yet distinguish a capability from a shape",
+            code=2,
+        )
+
+
 def _reference_failures(tasks) -> list[str]:
     from protea.config.models import CategoryWeight, EvaluationConfig
     from protea.evaluation.reference import ReferenceProvider

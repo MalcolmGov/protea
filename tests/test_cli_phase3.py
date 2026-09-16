@@ -80,6 +80,19 @@ def test_evaluate_run_reference_and_compare(tmp_path: Path):
     assert payload["decision"]["kill_recommended"] is True
 
 
+def test_evaluate_audit_reports_the_stub_floor_and_enforces_a_ceiling():
+    result = runner.invoke(app, ["evaluate", "audit", "--root", str(REPO)])
+    assert result.exit_code == 0, result.output
+    assert "stub ZaraScore" in result.output
+    assert "fully satisfied by a stub" in result.output
+    as_json = runner.invoke(app, ["evaluate", "audit", "--root", str(REPO), "--json"])
+    assert json.loads(as_json.output)["tasks"] > 0
+    # --max-zarascore is the enforcement hook: once the suite is tightened, CI fails if the floor creeps back up
+    blocked = runner.invoke(app, ["evaluate", "audit", "--root", str(REPO), "--max-zarascore", "0.01"])
+    assert blocked.exit_code == 2
+    assert "cannot yet distinguish" in blocked.output
+
+
 def test_evaluate_run_paid_provider_requires_confirm():
     result = runner.invoke(app, ["evaluate", "run", "--provider", "anthropic", "--root", str(REPO), "--limit", "3"])
     assert result.exit_code == 1
