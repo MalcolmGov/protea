@@ -91,7 +91,7 @@ PY
 # ---- 1. Node + the harness (user-space install, install scripts off) ---------------------------------------
 echo "protea-harness: installing node $NODE_VERSION and @deepseek-ai/dsh@$DSH_VERSION"
 mkdir -p "$WORKBASE/node" "$WORKBASE/dsh"
-if ! curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" | tar -xJ -C "$WORKBASE/node" --strip-components=1; then
+if ! curl --proto "=https" --tlsv1.2 -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" | tar -xJ -C "$WORKBASE/node" --strip-components=1; then
   echo "protea-harness: node download failed"; exit 2
 fi
 export PATH="$WORKBASE/node/bin:$PATH"
@@ -192,12 +192,15 @@ console.log("steps:", steps);
 JS
 
 # ---- 2. Engine dependencies ------------------------------------------------------------------------------
-python -c "import pytest" 2>/dev/null || python -m pip install --user --quiet --no-warn-script-location pytest >/dev/null 2>&1 || true
-python -c "import fastapi, uvicorn" 2>/dev/null || python -m pip install --user --quiet --no-warn-script-location "fastapi>=0.115" "uvicorn>=0.30" >/dev/null 2>&1 || true
+# Wheels only, like every image build in this repo (requirements/*.txt): a runtime install must never run a sdist's
+# setup script on the pod. Everything here ships manylinux wheels for the image's Python.
+PIP_INSTALL=(python -m pip install --user --quiet --no-warn-script-location --only-binary :all:)
+python -c "import pytest" 2>/dev/null || "${PIP_INSTALL[@]}" pytest >/dev/null 2>&1 || true
+python -c "import fastapi, uvicorn" 2>/dev/null || "${PIP_INSTALL[@]}" "fastapi>=0.115" "uvicorn>=0.30" >/dev/null 2>&1 || true
 if [ "$ENGINE" = "vllm" ]; then
   echo "protea-harness: pip install vllm==$VLLM_VERSION (user site; torch stays at the image's 2.8.0)"
   T0=$(date +%s)
-  if python -m pip install --user --quiet --no-warn-script-location "vllm==${VLLM_VERSION}" "transformers>=4.56,<5" >"$OUT/pip-vllm.log" 2>&1; then
+  if "${PIP_INSTALL[@]}" "vllm==${VLLM_VERSION}" "transformers>=4.56,<5" >"$OUT/pip-vllm.log" 2>&1; then
     echo "protea-harness: vllm installed in $(( $(date +%s) - T0 ))s: $(python -c 'import vllm; print(vllm.__version__)' 2>/dev/null)"
   else
     echo "protea-harness: vllm install FAILED after $(( $(date +%s) - T0 ))s — falling back to the in-process local provider on CUDA"
