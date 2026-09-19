@@ -1,0 +1,195 @@
+name: Run agent harness (RunPod)
+
+# Drive a Protea-served model with DeepSeek Harness (dsh) on a rented GPU — no training, no ZaraBench. The pod
+# runs entrypoint-harness.sh (selected via PROTEA_ENTRYPOINT): per inference config it starts vLLM at the pinned
+# revision, the facade in front of it (tool guard as deployed), then runs three headless coding-agent tasks in a
+# seeded workspace and pushes every transcript + this log to R2 under harness-reports/<run_id>/ and logs/. Read
+# the result with "Fetch training logs (R2)" (prefix harness-reports/ or logs/). Background and the CPU pilot:
+# Gaslite docs/zaralm/deepseek-harness-protea.md.
+#
+# NOTE ON THE PRINTED PLAN: the launcher (`train remote`) prints a *training* cost/duration estimate for the given
+# config — ignore it. A harness run is engine start + a few minutes of tasks per model (GPU time only).
+on:
+  workflow_dispatch:
+    inputs:
+      bucket:
+        description: R2 bucket name (e.g. protea-runs)
+        required: true
+        default: protea-runs
+      endpoint:
+        description: R2 S3 endpoint, e.g. https://<account-id>.r2.cloudflarestorage.com
+        required: true
+      models:
+        description: "Semicolon-separated <inference config>@<pinned Hub revision> entries, served in order on the same pod (configs/inference/*.yaml; revisions from configs/models/*.yaml)"
+        required: true
+        default: configs/inference/vllm-qwen3-4b.yaml@1cfa9a7208912126459214e8b04321603b3df60c;configs/inference/vllm-qwen3-8b.yaml@b968826d9c46dd6066d109eabc6255188de91218
+      engine:
+        description: vllm serves through the production engine (installed on the pod at the version Dockerfile.infer pins); local loads the model in-process on CUDA (the eval/rehearsal path)
+        required: true
+        default: vllm
+        type: choice
+        options: [vllm, local]
+      composition:
+        description: "minimal = one bash tool + one-line persona (the harness's own `minimal` preset shape); standard = the harness's full tool roster (~6k tokens of tool schemas per call)"
+        required: true
+        default: minimal
+        type: choice
+        options: [minimal, standard]
+      thinking:
+        description: "Qwen3 reasoning mode. false matches the CPU pilot and the B0 baseline; default leaves the chat template alone (the harness then sees reasoning routed away from the content via --reasoning-parser qwen3)"
+        required: true
+        default: "false"
+        type: choice
+        options: ["false", "default", "true"]
+      system_prompt_file:
+        description: "Optional repo path to a system-prompt overlay the facade merges above the harness's own prompt, e.g. configs/evaluation/guardrail-system-prompt.md (blank = none; the tool guard applies either way)"
+        required: false
+        default: ""
+      dsh_version:
+        description: "@deepseek-ai/dsh version to install on the pod (developer preview; pin it)"
+        required: true
+        default: 0.1.5-rc.2
+      image_tag:
+        description: "protea-train image tag to run (blank = latest, i.e. main). Use the sha-<commit> tag that 'Publish training image' produced for a branch that carries entrypoint-harness.sh"
+        required: false
+        default: ""
+      config:
+        description: Training config (used ONLY to satisfy the launcher and estimate; not what runs on the pod)
+        required: true
+        default: configs/training/protea-agent-8b-qlora-0.2.yaml
+      remote:
+        description: GPU target (48GB fits the 8B in bf16; the launch falls through targets until one has capacity)
+        required: true
+        default: configs/remote/runpod-a6000-community.yaml
+        type: choice
+        options:
+          - configs/remote/runpod-a6000-community.yaml
+          - configs/remote/runpod-l40s-community.yaml
+          - configs/remote/runpod-h100.yaml
+          - configs/remote/runpod-a100.yaml
+          - configs/remote/runpod-a6000.yaml
+          - configs/remote/runpod-l40s.yaml
+      train_key:
+        description: R2 key of the train split (fetched locally so the launcher can hash the config's dataset)
+        required: true
+        default: protea_data/0.2.0/train.blended.jsonl
+      val_key:
+        description: R2 key of the validation split
+        required: true
+        default: protea_data/0.2.0/validation.jsonl
+      confirm:
+        description: dry-run prints the plan only; launch rents the GPU for the harness run
+        required: true
+        default: dry-run
+        type: choice
+        options: [dry-run, launch]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: run-harness
+  cancel-in-progress: false
+
+env:
+  AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+  AWS_ENDPOINT_URL: ${{ inputs.endpoint }}
+  AWS_DEFAULT_REGION: auto
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: "pip install --only-binary :all: --require-hashes -r requirements/base.txt"
+
+      - name: Point the RunPod configs at your R2 bucket, endpoint and (optionally) image tag
+        env:
+          BUCKET: ${{ inputs.bucket }}
+          ENDPOINT: ${{ inputs.endpoint }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          python - <<'PY'
+          import os, glob, pathlib, yaml
+          tag = os.environ.get("IMAGE_TAG", "").strip()
+          for f in glob.glob("configs/remote/runpod*.yaml"):
+              p = pathlib.Path(f)
+              cfg = yaml.safe_load(p.read_text())
+              cfg["storage"]["uri"] = f"s3://{os.environ['BUCKET']}"
+              cfg["storage"]["endpoint"] = os.environ["ENDPOINT"]
+              if tag:
+                  cfg["image"] = cfg["image"].rsplit(":", 1)[0] + ":" + tag
+              p.write_text(yaml.safe_dump(cfg, sort_keys=False))
+          PY
+
+      # The launcher hashes the config's training dataset, so fetch it into the paths the config expects. The pod
+      # does NOT use it — it serves the pinned base models — but `train remote` reads it to plan.
+      - name: Fetch the dataset from R2 (so the launcher can hash it)
+        env:
+          BUCKET: ${{ inputs.bucket }}
+          CONFIG: ${{ inputs.config }}
+          TRAIN_KEY: ${{ inputs.train_key }}
+          VAL_KEY: ${{ inputs.val_key }}
+        run: |
+          TRAIN_DST=$(python -c "import yaml; print(yaml.safe_load(open('$CONFIG'))['dataset']['train'])")
+          VAL_DST=$(python -c "import yaml; print(yaml.safe_load(open('$CONFIG'))['dataset']['validation'])")
+          mkdir -p "$(dirname "$TRAIN_DST")" "$(dirname "$VAL_DST")"
+          aws s3 cp "s3://${BUCKET}/${TRAIN_KEY}" "$TRAIN_DST"
+          aws s3 cp "s3://${BUCKET}/${VAL_KEY}"   "$VAL_DST"
+
+      - name: Plan (dry-run — rents nothing)
+        if: ${{ inputs.confirm != 'launch' }}
+        env:
+          CONFIG: ${{ inputs.config }}
+          REMOTE: ${{ inputs.remote }}
+          PROTEA_ENTRYPOINT: entrypoint-harness.sh
+          PROTEA_HARNESS_MODELS: ${{ inputs.models }}
+          PROTEA_HARNESS_ENGINE: ${{ inputs.engine }}
+          PROTEA_HARNESS_COMPOSITION: ${{ inputs.composition }}
+          PROTEA_HARNESS_THINKING: ${{ inputs.thinking }}
+          PROTEA_HARNESS_SYSTEM_PROMPT_FILE: ${{ inputs.system_prompt_file }}
+          PROTEA_HARNESS_DSH_VERSION: ${{ inputs.dsh_version }}
+        run: |
+          PYTHONPATH=. python -m protea.cli train remote \
+            --config "$CONFIG" --remote "$REMOTE" --allow-unregistered
+          echo "--- pod spec (secrets as \${NAME} placeholders) ---"
+          cat runs/remote/*/runpod-deploy.graphql
+
+      # Launch. PROTEA_ENTRYPOINT makes the pod run entrypoint-harness.sh; the launcher forwards the PROTEA_HARNESS_*
+      # knobs to the pod. Fall through GPU targets until one has capacity, same as training and eval.
+      - name: Launch harness run (tries GPU targets until one has capacity)
+        if: ${{ inputs.confirm == 'launch' }}
+        env:
+          CONFIG: ${{ inputs.config }}
+          REMOTE: ${{ inputs.remote }}
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          PROTEA_STORAGE_CREDENTIALS: ${{ secrets.R2_ACCESS_KEY_ID }}:${{ secrets.R2_SECRET_ACCESS_KEY }}
+          PROTEA_ENTRYPOINT: entrypoint-harness.sh
+          PROTEA_HARNESS_MODELS: ${{ inputs.models }}
+          PROTEA_HARNESS_ENGINE: ${{ inputs.engine }}
+          PROTEA_HARNESS_COMPOSITION: ${{ inputs.composition }}
+          PROTEA_HARNESS_THINKING: ${{ inputs.thinking }}
+          PROTEA_HARNESS_SYSTEM_PROMPT_FILE: ${{ inputs.system_prompt_file }}
+          PROTEA_HARNESS_DSH_VERSION: ${{ inputs.dsh_version }}
+        run: |
+          CANDIDATES=$(printf '%s\n' "$REMOTE" \
+            configs/remote/runpod-a6000-community.yaml \
+            configs/remote/runpod-l40s-community.yaml \
+            configs/remote/runpod-h100.yaml \
+            configs/remote/runpod-a100.yaml | awk 'NF && !seen[$0]++')
+          for R in $CANDIDATES; do
+            echo "=== attempting harness launch on $R ==="
+            if PYTHONPATH=. python -m protea.cli train remote \
+                 --config "$CONFIG" --remote "$R" --allow-unregistered --confirm; then
+              echo "launched on $R"
+              exit 0
+            fi
+            echo "$R has no capacity right now; trying the next target"
+          done
+          echo "all GPU targets are supply-constrained at the moment — re-run shortly"
+          exit 1

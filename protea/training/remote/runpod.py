@@ -82,6 +82,13 @@ class RunPodAdapter(RemoteAdapter):
             "PROTEA_SYNTH_SCENARIOS",
             "PROTEA_SYNTH_TARGET_TOOLS",
             "PROTEA_SYNTH_BALANCE",
+            # harness entrypoint (which inference configs to serve, engine, agent composition) — unset otherwise.
+            "PROTEA_HARNESS_MODELS",
+            "PROTEA_HARNESS_ENGINE",
+            "PROTEA_HARNESS_COMPOSITION",
+            "PROTEA_HARNESS_THINKING",
+            "PROTEA_HARNESS_SYSTEM_PROMPT_FILE",
+            "PROTEA_HARNESS_DSH_VERSION",
         ):
             value = os.environ.get(name, "").strip()
             if value:

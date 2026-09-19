@@ -70,6 +70,22 @@ async def test_tool_call_round_trip_and_payload_shape():
     assert seen["body"]["tools"][0]["function"]["name"] == "get_order_status"
 
 
+async def test_extra_body_is_merged_without_overriding_contract_keys():
+    """`extra_body` carries server-specific fields (vLLM's chat_template_kwargs) into every payload; the contract's
+    own keys (model, messages, max_tokens, …) always win over it."""
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        return _completion({"role": "assistant", "content": "ok"})
+
+    p = _provider(handler, extra_body={"chat_template_kwargs": {"enable_thinking": False}, "model": "not-this"})
+    await p.generate(GenerationRequest(messages=[Message(role="user", content="hi")], max_tokens=7))
+    assert seen["body"]["chat_template_kwargs"] == {"enable_thinking": False}
+    assert seen["body"]["model"] == "qwen3-8b"
+    assert seen["body"]["max_tokens"] == 7
+
+
 async def test_structured_uses_response_format():
     seen = {}
 
