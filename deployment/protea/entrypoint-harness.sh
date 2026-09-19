@@ -100,9 +100,16 @@ PY
 # ---- 1. Node + the harness (user-space install, install scripts off) ---------------------------------------
 echo "protea-harness: installing node $NODE_VERSION and @deepseek-ai/dsh@$DSH_VERSION"
 mkdir -p "$WORKBASE/node" "$WORKBASE/dsh"
-if ! timeout "$(bounded 300)" curl --proto "=https" --tlsv1.2 -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" | tar -xJ -C "$WORKBASE/node" --strip-components=1; then
-  echo "protea-harness: node download failed"; exit 2
+# The gzip tarball, not the xz one: the runtime image has no `xz`, and a failed extraction here would exit the
+# container within seconds and leave RunPod restarting it in a loop.
+NODE_TGZ="$WORKBASE/node.tar.gz"
+if ! timeout "$(bounded 300)" curl --proto "=https" --tlsv1.2 -fsSL -o "$NODE_TGZ" "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz"; then
+  echo "protea-harness: node download failed (curl exit $?)"; exit 2
 fi
+if ! tar -xzf "$NODE_TGZ" -C "$WORKBASE/node" --strip-components=1; then
+  echo "protea-harness: node extraction failed"; exit 2
+fi
+rm -f "$NODE_TGZ"
 export PATH="$WORKBASE/node/bin:$PATH"
 if ! ( cd "$WORKBASE/dsh" && npm init -y >/dev/null 2>&1 && timeout "$(bounded 600)" npm install --ignore-scripts --no-audit --no-fund "@deepseek-ai/dsh@${DSH_VERSION}" >/dev/null 2>&1 ); then
   echo "protea-harness: dsh install failed"; exit 2

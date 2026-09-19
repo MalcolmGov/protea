@@ -50,7 +50,7 @@ on:
         required: true
         default: 0.1.5-rc.2
       image_tag:
-        description: "protea-train image tag to run (blank = latest, i.e. main). Use the sha-<commit> tag that 'Publish training image' produced for a branch that carries entrypoint-harness.sh"
+        description: "protea-train image tag to run. Blank = the digest that `latest` points at right now, pinned so a host's cached `latest` cannot serve a stale image. Or a sha-<commit> tag from 'Publish training image'"
         required: false
         default: ""
       config:
@@ -107,23 +107,42 @@ jobs:
           python-version: "3.12"
       - run: "pip install --only-binary :all: --require-hashes -r requirements/base.txt"
 
-      - name: Point the RunPod configs at your R2 bucket, endpoint and (optionally) image tag
+      # A pod host may have an older `latest` cached and never re-pull it, so the image is pinned by digest: the
+      # digest `latest` resolves to at launch time (or the given tag as-is). The plan then prints the exact image.
+      - name: Point the RunPod configs at your R2 bucket, endpoint and the pinned image
         env:
           BUCKET: ${{ inputs.bucket }}
           ENDPOINT: ${{ inputs.endpoint }}
           IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
           python - <<'PY'
-          import os, glob, pathlib, yaml
+          import glob, json, os, pathlib, urllib.request, yaml
           tag = os.environ.get("IMAGE_TAG", "").strip()
+          def pinned(image: str) -> str:
+              repo = image.rsplit(":", 1)[0]                      # ghcr.io/malcolmgov/protea-train
+              if tag:
+                  return f"{repo}:{tag}"
+              name = repo.split("/", 1)[1]                        # malcolmgov/protea-train
+              tok = json.load(urllib.request.urlopen(f"https://ghcr.io/token?scope=repository:{name}:pull"))["token"]
+              req = urllib.request.Request(f"https://ghcr.io/v2/{name}/manifests/latest", method="HEAD", headers={
+                  "Authorization": f"Bearer {tok}",
+                  "Accept": ", ".join([
+                      "application/vnd.oci.image.index.v1+json",
+                      "application/vnd.docker.distribution.manifest.list.v2+json",
+                      "application/vnd.oci.image.manifest.v1+json",
+                      "application/vnd.docker.distribution.manifest.v2+json",
+                  ]),
+              })
+              digest = urllib.request.urlopen(req).headers["Docker-Content-Digest"]
+              return f"{repo}@{digest}"
           for f in glob.glob("configs/remote/runpod*.yaml"):
               p = pathlib.Path(f)
               cfg = yaml.safe_load(p.read_text())
               cfg["storage"]["uri"] = f"s3://{os.environ['BUCKET']}"
               cfg["storage"]["endpoint"] = os.environ["ENDPOINT"]
-              if tag:
-                  cfg["image"] = cfg["image"].rsplit(":", 1)[0] + ":" + tag
+              cfg["image"] = pinned(cfg["image"])
               p.write_text(yaml.safe_dump(cfg, sort_keys=False))
+          print("image:", cfg["image"])
           PY
 
       # The launcher hashes the config's training dataset, so fetch it into the paths the config expects. The pod
