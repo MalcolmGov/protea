@@ -64,6 +64,15 @@ TASK_TIMEOUT="${PROTEA_HARNESS_TASK_TIMEOUT_S:-600}"
 MAX_MINUTES="${PROTEA_MAX_RUNTIME_MINUTES:-75}"
 [ "$MAX_MINUTES" -gt 75 ] 2>/dev/null && MAX_MINUTES=75
 DEADLINE=$(( $(date +%s) + MAX_MINUTES * 60 ))
+remaining() { local r=$(( DEADLINE - $(date +%s) )); [ "$r" -gt 0 ] && echo "$r" || echo 0; }
+# bounded N: the smaller of N seconds and the time left, never 0 (GNU timeout treats 0 as "no limit").
+bounded() { local r; r=$(remaining); [ "$1" -lt "$r" ] && r=$1; [ "$r" -gt 0 ] && echo "$r" || echo 1; }
+# The cap is enforced, not just measured: past it (plus a grace period for the final push) the watchdog
+# terminates this shell, and the TERM trap ships whatever was written before exiting.
+on_term() { echo "protea-harness: terminated (hard cap ${MAX_MINUTES} min or external stop)"; push_state; exit 143; }
+trap on_term TERM INT
+( sleep $(( MAX_MINUTES * 60 + 180 )); echo "protea-harness: watchdog — hard cap passed"; kill -TERM $$ 2>/dev/null ) &
+WATCHDOG_PID=$!
 
 cd "$WORKDIR"
 export HOME="${HOME:-/home/protea}"
@@ -91,17 +100,17 @@ PY
 # ---- 1. Node + the harness (user-space install, install scripts off) ---------------------------------------
 echo "protea-harness: installing node $NODE_VERSION and @deepseek-ai/dsh@$DSH_VERSION"
 mkdir -p "$WORKBASE/node" "$WORKBASE/dsh"
-if ! curl --proto "=https" --tlsv1.2 -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" | tar -xJ -C "$WORKBASE/node" --strip-components=1; then
+if ! timeout "$(bounded 300)" curl --proto "=https" --tlsv1.2 -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" | tar -xJ -C "$WORKBASE/node" --strip-components=1; then
   echo "protea-harness: node download failed"; exit 2
 fi
 export PATH="$WORKBASE/node/bin:$PATH"
-if ! ( cd "$WORKBASE/dsh" && npm init -y >/dev/null 2>&1 && npm install --ignore-scripts --no-audit --no-fund "@deepseek-ai/dsh@${DSH_VERSION}" >/dev/null 2>&1 ); then
+if ! ( cd "$WORKBASE/dsh" && npm init -y >/dev/null 2>&1 && timeout "$(bounded 600)" npm install --ignore-scripts --no-audit --no-fund "@deepseek-ai/dsh@${DSH_VERSION}" >/dev/null 2>&1 ); then
   echo "protea-harness: dsh install failed"; exit 2
 fi
 DSH="$WORKBASE/dsh/node_modules/.bin/dsh"
 export DSH_HOME="$WORKBASE/dsh/home" DSH_TELEMETRY_MODE=DISABLED DSH_PERMISSION_MODE=workspace-write
 mkdir -p "$DSH_HOME"
-if ! "$DSH" --profile protea-min --from-default-profile headless --dump-config >/dev/null 2>"$OUT/dsh-profile-init.err"; then
+if ! timeout "$(bounded 120)" "$DSH" --profile protea-min --from-default-profile headless --dump-config >/dev/null 2>"$OUT/dsh-profile-init.err"; then
   echo "protea-harness: dsh profile init failed"; cat "$OUT/dsh-profile-init.err"; exit 2
 fi
 echo "protea-harness: dsh $("$DSH" --version 2>/dev/null) ready"
@@ -195,12 +204,12 @@ JS
 # Wheels only, like every image build in this repo (requirements/*.txt): a runtime install must never run a sdist's
 # setup script on the pod. Everything here ships manylinux wheels for the image's Python.
 PIP_INSTALL=(python -m pip install --user --quiet --no-warn-script-location --only-binary :all:)
-python -c "import pytest" 2>/dev/null || "${PIP_INSTALL[@]}" pytest >/dev/null 2>&1 || true
-python -c "import fastapi, uvicorn" 2>/dev/null || "${PIP_INSTALL[@]}" "fastapi>=0.115" "uvicorn>=0.30" >/dev/null 2>&1 || true
+python -c "import pytest" 2>/dev/null || timeout "$(bounded 300)" "${PIP_INSTALL[@]}" pytest >/dev/null 2>&1 || true
+python -c "import fastapi, uvicorn" 2>/dev/null || timeout "$(bounded 300)" "${PIP_INSTALL[@]}" "fastapi>=0.115" "uvicorn>=0.30" >/dev/null 2>&1 || true
 if [ "$ENGINE" = "vllm" ]; then
   echo "protea-harness: pip install vllm==$VLLM_VERSION (user site; torch stays at the image's 2.8.0)"
   T0=$(date +%s)
-  if "${PIP_INSTALL[@]}" "vllm==${VLLM_VERSION}" "transformers>=4.56,<5" >"$OUT/pip-vllm.log" 2>&1; then
+  if timeout "$(bounded 900)" "${PIP_INSTALL[@]}" "vllm==${VLLM_VERSION}" "transformers>=4.56,<5" >"$OUT/pip-vllm.log" 2>&1; then
     echo "protea-harness: vllm installed in $(( $(date +%s) - T0 ))s: $(python -c 'import vllm; print(vllm.__version__)' 2>/dev/null)"
   else
     echo "protea-harness: vllm install FAILED after $(( $(date +%s) - T0 ))s — falling back to the in-process local provider on CUDA"
@@ -266,8 +275,9 @@ printf '# Harness smoke workspace\n\nA tiny Python module with a deliberate bug.
 ( cd "$WS" && git init -q . && git add -A && git -c user.email=harness@protea -c user.name=harness commit -qm "seed workspace" )
 
 # ---- helpers ----------------------------------------------------------------------------------------------
-wait_http() {  # url max_seconds [pid]: poll until 2xx; give up early when the process died
-  local url=$1 max=$2 pid=${3:-} t=0
+wait_http() {  # url max_seconds [pid]: poll until 2xx, within the time left; give up early when the process died
+  local url=$1 max pid=${3:-} t=0
+  max=$(bounded "$2")
   while [ "$t" -lt "$max" ]; do
     curl -sf "$url" >/dev/null 2>&1 && return 0
     if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then return 1; fi
@@ -283,7 +293,7 @@ run_task() {  # label task-text: one headless dsh run in a clean workspace; tran
   ( cd "$WS" && git checkout -q -- . && git clean -qfd )
   rm -rf "$DSH_HOME/sessions"
   local start; start=$(date +%s)
-  ( cd "$WS" && timeout --signal=TERM --kill-after=30 "$TASK_TIMEOUT" "$DSH" --profile protea-min "$task" >"$dir/stdout.txt" 2>"$dir/stderr.txt" )
+  ( cd "$WS" && timeout --signal=TERM --kill-after=30 "$(bounded "$TASK_TIMEOUT")" "$DSH" --profile protea-min "$task" >"$dir/stdout.txt" 2>"$dir/stderr.txt" )
   local code=$? elapsed=$(( $(date +%s) - start ))
   echo "label=$label exit=$code elapsed=${elapsed}s" > "$dir/meta.txt"
   node "$WORKBASE/decode-session.js" "$DSH_HOME/sessions" "$dir/session.jsonl" >/dev/null 2>&1 || true
@@ -297,11 +307,13 @@ IFS=';' read -r -a ENTRIES <<< "$MODELS"
 for entry in "${ENTRIES[@]}"; do
   [ -z "$entry" ] && continue
   CFG="${entry%%@*}"; REV="${entry#*@}"; [ "$REV" = "$entry" ] && REV=""
-  MODEL_LABEL="$(basename "$CFG" .yaml)"
+  # One directory per entry: the same config at two revisions must not overwrite each other's transcripts.
+  MODEL_LABEL="$(basename "$CFG" .yaml)${REV:+-${REV:0:8}}"
+  n=1; while [ -e "$OUT/$MODEL_LABEL" ]; do n=$((n + 1)); MODEL_LABEL="$(basename "$CFG" .yaml)${REV:+-${REV:0:8}}-$n"; done
   mkdir -p "$OUT/$MODEL_LABEL"
   MODEL_ID="$(python -c 'import sys, yaml; print(yaml.safe_load(open(sys.argv[1]))["model"])' "$CFG" 2>/dev/null)"
   if [ -z "$MODEL_ID" ]; then echo "protea-harness: $CFG is not an inference config; skipping"; continue; fi
-  if [ "$(date +%s)" -gt $((DEADLINE - 900)) ]; then echo "protea-harness: under 15 min to the deadline; skipping $MODEL_LABEL"; continue; fi
+  if [ "$(remaining)" -lt 900 ]; then echo "protea-harness: under 15 min to the deadline; skipping $MODEL_LABEL"; continue; fi
   echo "protea-harness: === $MODEL_LABEL: $MODEL_ID @ ${REV:-main} via $ENGINE ==="
   ENGINE_PID=""; FACADE_PID=""
   if [ "$ENGINE" = "vllm" ]; then
@@ -361,6 +373,7 @@ print(hdr + "\n".join(rows))
 PY
 
 [ -n "$SYNC_PID" ] && kill "$SYNC_PID" 2>/dev/null || true
+kill "$WATCHDOG_PID" 2>/dev/null || true
 push_state
-echo "protea-harness: done; results under $PROTEA_STORAGE/harness-reports/$(basename "$OUT")"
+echo "protea-harness: done in $(( MAX_MINUTES * 60 - $(remaining) ))s; results under $PROTEA_STORAGE/harness-reports/$(basename "$OUT")"
 exit 0
