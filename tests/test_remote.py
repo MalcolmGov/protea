@@ -240,6 +240,17 @@ def test_runpod_entrypoint_override_and_eval_env_passthrough(catalogue, monkeypa
     assert '{ key: "PROTEA_SYNTH_SCENARIOS", value: "write-after-confirm write-confirms" }' in m
     assert '{ key: "PROTEA_SYNTH_LIMIT", value: "340" }' in m
 
+    # Harness launch: the agent-harness entrypoint + its knobs (inference configs, engine, composition) forward too.
+    monkeypatch.setenv("PROTEA_ENTRYPOINT", "entrypoint-harness.sh")
+    monkeypatch.setenv("PROTEA_HARNESS_MODELS", "configs/inference/vllm-qwen3-4b.yaml@1cfa9a72")
+    monkeypatch.setenv("PROTEA_HARNESS_ENGINE", "vllm")
+    monkeypatch.setenv("PROTEA_HARNESS_COMPOSITION", "minimal")
+    m = build_adapter(rp).plan(req).artifacts["runpod-deploy.graphql"]
+    assert 'dockerArgs: "entrypoint-harness.sh"' in m
+    assert '{ key: "PROTEA_HARNESS_MODELS", value: "configs/inference/vllm-qwen3-4b.yaml@1cfa9a72" }' in m
+    assert '{ key: "PROTEA_HARNESS_ENGINE", value: "vllm" }' in m
+    assert '{ key: "PROTEA_HARNESS_COMPOSITION", value: "minimal" }' in m
+
 
 def test_eval_entrypoint_is_shipped_and_scores_local(catalogue):
     """The image ships the eval wrapper + the ZaraBench suite, and the wrapper scores the adapter with the free

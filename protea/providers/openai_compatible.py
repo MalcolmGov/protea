@@ -150,14 +150,19 @@ class OpenAICompatibleProvider(ModelProvider):
         extra_headers: dict[str, str] | None = None,
         timeout_s: float = 60.0,
         http_client: httpx.AsyncClient | None = None,
+        extra_body: dict[str, Any] | None = None,
         **kw: Any,
     ):
+        """`extra_body` is merged into every chat-completions payload: server-specific fields the contract has no
+        word for, e.g. vLLM's ``{"chat_template_kwargs": {"enable_thinking": false}}`` to switch Qwen3 reasoning off
+        for a served model (the vLLM counterpart of the local provider's ``enable_thinking``)."""
         super().__init__(model=model, **kw)
         if name:
             self.name = name
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.extra_headers = extra_headers or {}
+        self.extra_body = dict(extra_body or {})
         self._client = http_client or httpx.AsyncClient(timeout=timeout_s)
 
     # ---- request building -----------------------------------------------------------------
@@ -196,6 +201,8 @@ class OpenAICompatibleProvider(ModelProvider):
         if stream:
             payload["stream"] = True
             payload["stream_options"] = {"include_usage": True}
+        for key, value in self.extra_body.items():  # server-specific fields; the contract's own keys win
+            payload.setdefault(key, value)
         return payload
 
     # ---- calls ---------------------------------------------------------------------------------

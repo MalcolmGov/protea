@@ -33,6 +33,9 @@ class ProteaSettings(BaseSettings):
     protea_inference_url: str | None = None  # vLLM OpenAI-compatible base, e.g. http://gpu:8000/v1
     protea_inference_token: str | None = None
     protea_inference_model: str = "protea-agent"
+    # JSON object merged into every request to the engine, e.g. '{"chat_template_kwargs": {"enable_thinking": false}}'
+    # to serve Qwen3 with reasoning off through vLLM (the serving-path twin of PROTEA_LOCAL_ENABLE_THINKING).
+    protea_inference_extra_body: str | None = None
     protea_facade_token: str | None = None  # bearer token the facade requires from callers
     local_model: str = Field(default="Qwen/Qwen2.5-0.5B-Instruct", validation_alias=AliasChoices("PROTEA_LOCAL_MODEL"))
     local_revision: str | None = Field(default=None, validation_alias=AliasChoices("PROTEA_LOCAL_REVISION"))

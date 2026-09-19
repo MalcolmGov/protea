@@ -67,6 +67,29 @@ Qwen3-8B at bf16 with an 8k context fits a 24 GB GPU (L4, A10G, RTX 4090); use `
 
 Shutdown: `docker stop` (60 s grace) or a Kubernetes preStop; both processes drain in-flight requests first.
 
+## Serving Qwen3 without reasoning traces
+
+vLLM applies the chat template's default, and Qwen3's default is thinking on. The serving-path twin of the local
+provider's `enable_thinking` is `PROTEA_INFERENCE_EXTRA_BODY`: a JSON object the `protea` provider merges into every
+chat-completions request (the contract's own keys always win). For Qwen3 on vLLM:
+
+```
+PROTEA_INFERENCE_EXTRA_BODY='{"chat_template_kwargs": {"enable_thinking": false}}'
+```
+
+## Agent-harness run on a rented GPU
+
+`Run agent harness (RunPod)` (`.github/workflows/run-harness.yml`) rents a pod that serves each listed inference
+config through vLLM at its pinned revision, puts the facade (tool guard as deployed) in front of it, and drives it
+with DeepSeek Harness in the shape of the harness's `minimal` preset — three headless coding-agent tasks in a seeded
+workspace. Transcripts, per-step latency and token counts, workspace diffs and a summary table land under
+`harness-reports/<run_id>/` on R2 (read them with `Fetch training logs (R2)`, prefix `harness-reports/`). It is an
+independent, multi-turn exercise of the served model outside ZaraBench, not a release gate; the CPU pilot that
+motivated it, and how to read its results, is in the Gaslite repository under `docs/zaralm/deepseek-harness-protea.md`.
+Knobs: `models` (`<inference config>@<revision>;…`), `engine` (`vllm` or the in-process `local` fallback),
+`composition` (`minimal` or the harness's `standard` roster), `thinking`, `system_prompt_file`, `dsh_version`, and
+`image_tag` to run a branch's `sha-…` image before it reaches `latest`.
+
 ## Not in this phase
 
 The Zara-specific routes (`/v1/agent/generate|repair|optimize`, `/v1/workflow/generate`, `/v1/tools/select`) wrap the Agent Compiler and are built in aria in Phase 6 on top of `/v1/generate/structured`.

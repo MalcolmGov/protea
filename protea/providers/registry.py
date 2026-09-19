@@ -94,6 +94,10 @@ def _build_ollama(s: ProteaSettings, model: str | None, kw: dict[str, Any], ov: 
 
 
 def _build_protea(s: ProteaSettings, model: str | None, kw: dict[str, Any], ov: dict[str, Any]) -> ModelProvider:
+    if s.protea_inference_extra_body and "extra_body" not in ov:
+        import json
+
+        ov = {**ov, "extra_body": json.loads(s.protea_inference_extra_body)}
     return _build_openai_compatible(
         "protea", model or s.protea_inference_model, s.protea_inference_url, s.protea_inference_token, s, kw, ov
     )

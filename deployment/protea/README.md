@@ -6,6 +6,7 @@
 | `Dockerfile.facade` | CPU facade (`protea serve facade`): auth, validation gate, `/healthz` `/readyz` `/metrics` |
 | `Dockerfile.train` + `entrypoint-train.sh` | image referenced by the remote job adapters (`ghcr.io/malcolmgov/protea-train`); the entrypoint loads object-store credentials, pulls the dataset, streams checkpoints to storage, enforces the runtime limit and pushes the final adapter |
 | `docker-compose.yml` | engine + facade on one GPU host |
+| `entrypoint-harness.sh` | baked into the train image; `Run agent harness (RunPod)` selects it via `PROTEA_ENTRYPOINT` to serve a pinned base through vLLM + the facade and drive it with DeepSeek Harness (`docs/inference.md`) |
 
 See `docs/inference.md` for wiring aria's runtime (`MIAI_MODEL_GATEWAY_URL`) to the facade, sizing and the execution boundary.
 
